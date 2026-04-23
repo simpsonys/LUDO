@@ -17,6 +17,7 @@ export interface SessionRecord {
   backend: BackendMode;
   language: SessionLanguage;
   status: SessionStatus;
+  computeType?: string;
   inputFileName?: string;
   inputFileBytes?: number;
 }

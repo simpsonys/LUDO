@@ -536,6 +536,7 @@ fn run_worker_process(
     chunk_duration_ms: Option<u32>,
     sample_count: Option<u32>,
     vad_filter: Option<bool>,
+    compute_type: Option<&str>,
 ) -> Result<Vec<Value>, String> {
     let (service_dir, python_executable, python_path) = resolve_worker_python_runtime();
 
@@ -594,8 +595,17 @@ fn run_worker_process(
             .arg(if vad { "true" } else { "false" });
     }
 
-    if backend == "local_gpu" && std::env::var("LUDO_GPU_COMPUTE_TYPE").is_err() {
-        command.env("LUDO_GPU_COMPUTE_TYPE", "int8_float16");
+    if backend == "local_gpu" {
+        let env_ct = std::env::var("LUDO_GPU_COMPUTE_TYPE").ok();
+        let effective_ct = compute_type
+            .filter(|ct| !ct.is_empty())
+            .map(|ct| ct.to_string())
+            .or(env_ct)
+            .unwrap_or_else(|| "float16".to_string());
+        command.env("LUDO_GPU_COMPUTE_TYPE", &effective_ct);
+        eprintln!(
+            "[LUDO][worker-launch] backend={backend} mode={mode} compute_type={effective_ct} session={session_id}"
+        );
     }
 
     configure_windows_gpu_runtime_env(
@@ -826,8 +836,20 @@ fn start_python_microphone_worker(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    if request.backend == "local_gpu" && std::env::var("LUDO_GPU_COMPUTE_TYPE").is_err() {
-        command.env("LUDO_GPU_COMPUTE_TYPE", "int8_float16");
+    if request.backend == "local_gpu" {
+        let env_ct = std::env::var("LUDO_GPU_COMPUTE_TYPE").ok();
+        let session_ct = request.session
+            .get("computeType")
+            .and_then(Value::as_str)
+            .filter(|ct| !ct.is_empty());
+        let effective_ct = session_ct
+            .map(|ct| ct.to_string())
+            .or(env_ct)
+            .unwrap_or_else(|| "float16".to_string());
+        command.env("LUDO_GPU_COMPUTE_TYPE", &effective_ct);
+        eprintln!(
+            "[LUDO][persistent-worker] compute_type={effective_ct} session={session_id}"
+        );
     }
 
     configure_windows_gpu_runtime_env(
@@ -1198,6 +1220,10 @@ fn run_python_file_transcription(
     fs::write(&worker_input_path, &request.input_file_bytes)
         .map_err(|error| format!("failed to write worker input file: {error}"))?;
 
+    let compute_type = request.session
+        .get("computeType")
+        .and_then(Value::as_str);
+
     let events = run_worker_process(
         "file",
         session_id,
@@ -1213,6 +1239,7 @@ fn run_python_file_transcription(
         None,
         None,
         None,
+        compute_type,
     )?;
 
     Ok(RunPythonFileTranscriptionResponse {
@@ -1285,6 +1312,10 @@ fn run_python_microphone_chunk_transcription(
             .map_err(|error| format!("failed to write microphone debug chunk file: {error}"))?;
     }
 
+    let compute_type = request.session
+        .get("computeType")
+        .and_then(Value::as_str);
+
     let events = run_worker_process(
         "mic_chunk",
         session_id,
@@ -1300,6 +1331,7 @@ fn run_python_microphone_chunk_transcription(
         Some(request.chunk_duration_ms),
         Some(request.sample_count),
         None,
+        compute_type,
     )?;
 
     Ok(RunPythonMicrophoneChunkTranscriptionResponse {
@@ -1364,6 +1396,20 @@ fn write_session_artifacts(
         .get("backend")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
+    let language = request
+        .session
+        .get("language")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let compute_type = request
+        .session
+        .get("computeType")
+        .and_then(Value::as_str)
+        .unwrap_or(if backend == "local_cpu" { "int8" } else { "unknown" });
+
+    eprintln!(
+        "[LUDO][session] write session={session_id} backend={backend} language={language} compute_type={compute_type}"
+    );
 
     let generated_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1392,6 +1438,8 @@ fn write_session_artifacts(
     transcript_markdown.push_str(&format!("- title: {title}\n"));
     transcript_markdown.push_str(&format!("- source: {source}\n"));
     transcript_markdown.push_str(&format!("- backend: {backend}\n"));
+    transcript_markdown.push_str(&format!("- language: {language}\n"));
+    transcript_markdown.push_str(&format!("- computeType: {compute_type}\n"));
     transcript_markdown.push_str(&format!("- generatedAtMs: {generated_at_ms}\n\n"));
     transcript_markdown.push_str("## Final Segments\n\n");
 

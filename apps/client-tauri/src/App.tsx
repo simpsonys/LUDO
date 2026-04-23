@@ -86,6 +86,7 @@ export default function App() {
   const [state, setState] = useState<SessionState>(() => loadInitialState());
   const [selectedBackend, setSelectedBackend] = useState<BackendMode>("local_gpu");
   const [selectedLanguage, setSelectedLanguage] = useState<SessionLanguage>("auto");
+  const [selectedComputeType, setSelectedComputeType] = useState<string>("float16");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [clock, setClock] = useState(Date.now());
@@ -193,6 +194,7 @@ export default function App() {
       source: "file",
       backend: selectedBackend,
       language: selectedLanguage,
+      computeType: selectedBackend === "local_gpu" ? selectedComputeType : undefined,
       title: `LUDO File Session - ${selectedFile.name}`,
       inputFileName: selectedFile.name,
       inputFileBytes: selectedFile.size,
@@ -225,6 +227,7 @@ export default function App() {
       source: "mic",
       backend: selectedBackend,
       language: selectedLanguage,
+      computeType: selectedBackend === "local_gpu" ? selectedComputeType : undefined,
       title: `LUDO Microphone Session (${labelForBackend(selectedBackend)})`,
     });
 
@@ -354,6 +357,20 @@ export default function App() {
               <option value="en">English (en)</option>
             </select>
           </label>
+
+          {selectedBackend === "local_gpu" && (
+            <label>
+              Compute Type
+              <select
+                value={selectedComputeType}
+                onChange={(event) => setSelectedComputeType(event.target.value)}
+                disabled={isRunning}
+              >
+                <option value="float16">float16 (quality)</option>
+                <option value="int8_float16">int8_float16 (faster)</option>
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="actions">
@@ -395,6 +412,12 @@ export default function App() {
         <div className="card">
           <span>Language</span>
           <strong>{state.session.language}</strong>
+        </div>
+        <div className="card">
+          <span>Compute Type</span>
+          <strong>
+            {state.session.computeType ?? (state.session.backend === "local_cpu" ? "int8" : "-")}
+          </strong>
         </div>
         <div className="card">
           <span>Input File</span>

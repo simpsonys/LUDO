@@ -30,6 +30,7 @@ export interface SessionSeed {
   source?: SessionSource;
   backend?: BackendMode;
   language?: SessionLanguage;
+  computeType?: string;
   title?: string;
   inputFileName?: string;
   inputFileBytes?: number;
@@ -49,6 +50,7 @@ export function createSessionRecord(seed: SessionSeed = {}): SessionRecord {
     backend,
     language: seed.language ?? "auto",
     status: "idle",
+    computeType: seed.computeType,
     inputFileName: seed.inputFileName,
     inputFileBytes: seed.inputFileBytes,
   };

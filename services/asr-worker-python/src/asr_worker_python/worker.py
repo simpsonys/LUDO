@@ -356,7 +356,7 @@ def resolve_model_runtime_config(backend: AsrBackend) -> tuple[str, str, str]:
     model_name = os.environ.get("LUDO_WHISPER_MODEL", "small")
     device = "cuda" if backend == "local_gpu" else "cpu"
     if backend == "local_gpu":
-        compute_type = os.environ.get("LUDO_GPU_COMPUTE_TYPE", "int8_float16")
+        compute_type = os.environ.get("LUDO_GPU_COMPUTE_TYPE", "float16")
     else:
         compute_type = "int8"
     return model_name, device, compute_type
