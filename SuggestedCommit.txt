@@ -1,1 +1,1 @@
-feat: add folder open and clickable artifacts in UI
+fix: intelligent overlap merging for live transcript final segments

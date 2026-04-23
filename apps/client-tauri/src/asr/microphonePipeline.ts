@@ -178,33 +178,60 @@ export async function startMicrophoneChunkedSession(
 export async function startSystemAudioChunkedSession(
   request: MicrophoneSessionRequest,
   sink: TranscriptSink,
-  options: StartMicrophoneChunkedSessionOptions = {},
+  _options: StartMicrophoneChunkedSessionOptions = {},
 ): Promise<StreamHandle> {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    throw new Error("System audio capture is not supported in this runtime.");
-  }
+  let active = true;
 
-  const mediaStream = await navigator.mediaDevices
-    .getDisplayMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-      video: true, // video is required for getDisplayMedia, but we will ignore the video tracks
-    })
-    .catch((error: unknown) => {
-      throw new Error(`System audio capture failed: ${error instanceof Error ? error.message : String(error)}`);
+  try {
+    await startPythonMicrophoneWorker({
+      session: request.session,
+      backend: request.backend,
+      source: "system",
+      language: request.session.language,
     });
-
-  const audioTracks = mediaStream.getAudioTracks();
-  if (audioTracks.length === 0) {
-    mediaStream.getTracks().forEach((track) => track.stop());
-    throw new Error("No audio track was shared. Please make sure to check 'Share audio' when selecting the screen/window.");
+  } catch (err) {
+    throw new Error(`Failed to start native system audio worker: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  return startAudioChunkedSessionImpl(mediaStream, request, sink, options, "system");
+  const pollLoop = async (): Promise<"completed" | "stopped"> => {
+    while (active) {
+      try {
+        const res: { events: TranscriptEvent[] } = await invoke("poll_sys_audio_events", {
+          request: { session: request.session },
+        });
+
+        if (res.events && res.events.length > 0) {
+          await replayProgressively(res.events, sink);
+        } else {
+          await sleep(200);
+        }
+      } catch (e) {
+        if (active) {
+          sink({
+            type: "error",
+            sessionId: request.session.sessionId,
+            message: `System audio stream error: ${e}`,
+          });
+          active = false;
+        }
+      }
+    }
+    return "stopped";
+  };
+
+  const donePromise = pollLoop();
+
+  return {
+    stop: async () => {
+      active = false;
+      try {
+        await stopPythonMicrophoneWorker({ session: request.session });
+      } catch (e) {
+        console.warn("Failed to stop system audio worker cleanly:", e);
+      }
+    },
+    done: donePromise,
+  };
 }
 
 async function startAudioChunkedSessionImpl(

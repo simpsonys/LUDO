@@ -98,8 +98,8 @@ export default function App() {
   const streamRef = useRef<StreamHandle | null>(null);
   const runRef = useRef(0);
   
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const eventsEndRef = useRef<HTMLDivElement>(null);
+  const transcriptContainerRef = useRef<HTMLDivElement>(null);
+  const eventsContainerRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -107,11 +107,17 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (transcriptContainerRef.current) {
+      const el = transcriptContainerRef.current;
+      el.scrollTop = el.scrollHeight;
+    }
   }, [state.finalSegments, state.interimText]);
 
   useEffect(() => {
-    eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (eventsContainerRef.current) {
+      const el = eventsContainerRef.current;
+      el.scrollTop = el.scrollHeight;
+    }
   }, [state.events]);
 
   useEffect(() => {
@@ -479,7 +485,7 @@ export default function App() {
       <main className="layout">
         <section className="panel transcript">
           <h2>📝 Transcript Stream</h2>
-          <div className="transcript-feed">
+          <div className="transcript-feed" ref={transcriptContainerRef}>
             {state.finalSegments.map((segment) => (
               <div key={segment.segmentId} className="line final">
                 <p>{segment.text}</p>
@@ -495,13 +501,12 @@ export default function App() {
             {state.finalSegments.length === 0 && !state.interimText ? (
               <p className="empty">No transcript yet. Run file transcription or start microphone capture.</p>
             ) : null}
-            <div ref={transcriptEndRef} />
           </div>
         </section>
 
         <section className="panel events">
           <h2>⚡ Event Log</h2>
-          <ul>
+          <ul ref={eventsContainerRef}>
             {state.events
               .slice()
               .map((event, index) => (
@@ -510,7 +515,6 @@ export default function App() {
                   <span>{describeEvent(event)}</span>
                 </li>
               ))}
-            <div ref={eventsEndRef} />
           </ul>
         </section>
       </main>

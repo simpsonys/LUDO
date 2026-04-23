@@ -128,6 +128,60 @@ struct StopPythonMicrophoneWorkerResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PollSysAudioEventsRequest {
+    session: Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PollSysAudioEventsResponse {
+    events: Vec<Value>,
+}
+
+#[tauri::command]
+fn poll_sys_audio_events(
+    request: PollSysAudioEventsRequest,
+) -> Result<PollSysAudioEventsResponse, String> {
+    let session_id = session_id_from_value(&request.session)?;
+
+    let mut workers_guard = persistent_workers()
+        .lock()
+        .map_err(|error| format!("failed to lock worker registry: {error}"))?;
+
+    let worker = workers_guard
+        .get_mut(&session_id)
+        .ok_or_else(|| format!("persistent worker not found for session {}", session_id))?;
+
+    // Wait and read one json line from stdout
+    let payload = read_worker_json_line(
+        &mut worker.stdout,
+        "poll_sys_audio_events waiting for chunk result",
+    )?;
+
+    let kind = payload
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+
+    if kind == "chunk_result" {
+        let events = payload
+            .get("events")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        Ok(PollSysAudioEventsResponse { events })
+    } else if kind == "stopped" {
+        Ok(PollSysAudioEventsResponse { events: vec![] })
+    } else if kind == "fatal" || kind == "chunk_error" {
+        let msg = payload.get("message").and_then(Value::as_str).unwrap_or("unknown error");
+        Err(format!("worker error: {}", msg))
+    } else {
+        Ok(PollSysAudioEventsResponse { events: vec![] })
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct PythonRuntimeSnapshot {
     executable: String,
     prefix: String,
@@ -823,7 +877,7 @@ fn start_python_microphone_worker(
         .arg("-m")
         .arg("asr_worker_python.worker")
         .arg("--mode")
-        .arg("mic_stream")
+        .arg(if request.source == "system" { "sys_audio_stream" } else { "mic_stream" })
         .arg("--session-id")
         .arg(&session_id)
         .arg("--backend")
@@ -1513,6 +1567,7 @@ pub fn run() {
             ludo_ping,
             run_python_file_transcription,
             start_python_microphone_worker,
+            poll_sys_audio_events,
             process_python_microphone_chunk_transcription,
             stop_python_microphone_worker,
             run_python_microphone_chunk_transcription,

@@ -6,8 +6,15 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
+import traceback
 import wave
+
+try:
+    import soundcard as sc
+except ImportError:
+    sc = None  # type: ignore[assignment]
 from pathlib import Path
 from typing import Iterable, Literal
 
@@ -20,7 +27,7 @@ except ImportError:  # pragma: no cover - runtime dependency check
 
 SessionSource = Literal["mic", "system", "file"]
 AsrBackend = Literal["local_gpu", "local_cpu", "azure_server"]
-WorkerMode = Literal["file", "mic_chunk", "mic_stream"]
+WorkerMode = Literal["file", "mic_chunk", "mic_stream", "sys_audio_stream"]
 SessionLanguage = Literal["ko", "en", "auto"]
 LOCAL_BACKENDS: set[AsrBackend] = {"local_gpu", "local_cpu"}
 
@@ -760,9 +767,211 @@ def run_mic_stream_loop(
     return 0
 
 
+def run_sys_audio_stream_loop(
+    session_id: str,
+    backend: AsrBackend,
+    source: SessionSource,
+    language: SessionLanguage,
+    vad_filter_arg: str | None,
+    output_dir: Path | None,
+) -> int:
+    if sc is None:
+        emit_stream_message(
+            {
+                "kind": "fatal",
+                "sessionId": session_id,
+                "message": "soundcard library is missing. Cannot capture system audio.",
+            }
+        )
+        return 1
+
+    if backend not in LOCAL_BACKENDS:
+        emit_stream_message(
+            {
+                "kind": "fatal",
+                "sessionId": session_id,
+                "message": "azure_server is not available in local stream worker.",
+            }
+        )
+        return 1
+
+    started_perf = time.perf_counter()
+    model, model_name, device, compute_type, model_load_ms, cache_hit = load_whisper_model(backend)
+    startup_ms = int((time.perf_counter() - started_perf) * 1000)
+
+    emit_stream_message(
+        {
+            "kind": "ready",
+            "sessionId": session_id,
+            "backend": backend,
+            "source": source,
+            "language": language,
+            "model": model_name,
+            "device": device,
+            "computeType": compute_type,
+            "modelLoadMs": model_load_ms,
+            "startupMs": startup_ms,
+            "fromCache": cache_hit,
+        }
+    )
+
+    stop_event = threading.Event()
+    def stdin_listener():
+        for line in sys.stdin:
+            try:
+                payload = json.loads(line.strip())
+                if payload.get("type") == "stop":
+                    stop_event.set()
+                    break
+            except Exception:
+                pass
+    
+    t = threading.Thread(target=stdin_listener, daemon=True)
+    t.start()
+
+    speaker = sc.default_speaker()
+    mic = sc.get_microphone(id=str(speaker.name), include_loopback=True)
+
+    chunk_duration_sec = 2.0
+    vad_filter = resolve_mic_vad_filter(vad_filter_arg)
+    lang = language_arg(language)
+
+    if output_dir:
+        raw_dir = output_dir / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        full_audio_path = raw_dir / "full_session.wav"
+        wav_file = wave.open(str(full_audio_path), "wb")
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(TARGET_SAMPLE_RATE)
+    else:
+        wav_file = None
+
+    chunk_index = 0
+    try:
+        with mic.recorder(samplerate=TARGET_SAMPLE_RATE) as recorder:
+            while not stop_event.is_set():
+                chunk_index += 1
+                chunk_started = time.perf_counter()
+                
+                audio_data = recorder.record(numframes=int(TARGET_SAMPLE_RATE * chunk_duration_sec))
+                
+                if len(audio_data.shape) > 1 and audio_data.shape[1] > 1:
+                    mono_audio = np.mean(audio_data, axis=1, dtype=np.float32)
+                else:
+                    mono_audio = audio_data.flatten()
+                
+                if wav_file:
+                    i16_audio = (mono_audio * 32767).astype(np.int16)
+                    wav_file.writeframes(i16_audio.tobytes())
+
+                # Transcribe
+                norm_audio = normalize_audio_peak(mono_audio)
+                norm_min, norm_max, norm_rms, norm_peak = audio_stats(norm_audio)
+
+                events = [
+                    {
+                        "type": "backend_state",
+                        "sessionId": session_id,
+                        "at": now_ms(),
+                        "state": "running",
+                        "detail": f"sys_chunk={chunk_index} rms={norm_rms:.5f} peak={norm_peak:.5f}",
+                    }
+                ]
+
+                segments, _ = model.transcribe(
+                    audio=norm_audio,
+                    language=lang,
+                    vad_filter=vad_filter,
+                    beam_size=2,
+                    condition_on_previous_text=False,
+                )
+
+                segment_count = 0
+                base_offset_ms = int((chunk_index - 1) * chunk_duration_sec * 1000)
+
+                for seg_index, segment in enumerate(segments, start=1):
+                    text = segment.text.strip()
+                    if not text:
+                        continue
+
+                    segment_count += 1
+                    seg_id = f"sys-seg-{chunk_index:05d}-{seg_index:02d}"
+                    interim_cut = max(10, int(len(text) * 0.66))
+                    interim_text = f"{text[:interim_cut]}..." if len(text) > interim_cut else text
+
+                    start_ms = base_offset_ms + int(segment.start * 1000)
+                    end_ms = base_offset_ms + int(segment.end * 1000)
+
+                    events.append({
+                        "type": "interim",
+                        "sessionId": session_id,
+                        "segmentId": seg_id,
+                        "text": interim_text,
+                        "startMs": start_ms,
+                        "endMs": end_ms,
+                    })
+                    events.append({
+                        "type": "final",
+                        "sessionId": session_id,
+                        "segmentId": seg_id,
+                        "text": text,
+                        "startMs": start_ms,
+                        "endMs": end_ms,
+                    })
+
+                if segment_count == 0:
+                    events.append({
+                        "type": "backend_state",
+                        "sessionId": session_id,
+                        "at": now_ms(),
+                        "state": "running",
+                        "detail": f"sys_chunk={chunk_index} no speech",
+                    })
+
+                processing_ms = int((time.perf_counter() - chunk_started) * 1000)
+                metrics = {
+                    "processingMs": processing_ms,
+                    "rms": round(norm_rms, 6),
+                    "peak": round(norm_peak, 6),
+                    "segmentCount": segment_count,
+                    "model": model_name,
+                    "device": device,
+                    "computeType": compute_type,
+                }
+
+                emit_stream_message(
+                    {
+                        "kind": "chunk_result",
+                        "sessionId": session_id,
+                        "requestId": f"sys-{chunk_index}",
+                        "events": events,
+                        "metrics": metrics,
+                        "backend": backend,
+                        "device": device,
+                        "computeType": compute_type,
+                    }
+                )
+
+    except Exception as error:
+        log_debug(f"sys_audio_stream loop error: {error}")
+    finally:
+        if wav_file:
+            wav_file.close()
+
+    emit_stream_message(
+        {
+            "kind": "stopped",
+            "sessionId": session_id,
+            "requestId": "sys_stop",
+        }
+    )
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="LUDO worker")
-    parser.add_argument("--mode", default="file", choices=["file", "mic_chunk", "mic_stream"])
+    parser.add_argument("--mode", default="file", choices=["file", "mic_chunk", "mic_stream", "sys_audio_stream"])
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--backend", required=True, choices=["local_gpu", "local_cpu", "azure_server"])
     parser.add_argument("--source", default="file", choices=["mic", "system", "file"])
@@ -776,6 +985,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chunk-duration-ms", type=int, required=False)
     parser.add_argument("--sample-count", type=int, required=False)
     parser.add_argument("--vad-filter", required=False, choices=["true", "false"])
+    parser.add_argument("--output-dir", required=False)
     return parser.parse_args()
 
 
@@ -786,6 +996,47 @@ def main() -> None:
     backend: AsrBackend = args.backend
     source: SessionSource = args.source
     language: SessionLanguage = args.language
+    output_dir = Path(args.output_dir) if args.output_dir else None
+
+    if mode == "sys_audio_stream":
+        try:
+            if backend == "local_gpu":
+                patched_dirs = configure_windows_gpu_dll_dirs()
+                if patched_dirs:
+                    log_debug(f"local_gpu dll directories patched: {' | '.join(patched_dirs)}")
+                else:
+                    log_debug("local_gpu dll directory patch found no candidate directories")
+
+                cuda_ok, detail = detect_cuda_runtime()
+                log_debug(f"cuda_check backend={backend} result={cuda_ok} detail={detail}")
+                if not cuda_ok:
+                    emit_stream_message(
+                        {
+                            "kind": "fatal",
+                            "sessionId": session_id,
+                            "message": "CUDA runtime is unavailable for local_gpu. Switch to local_cpu or install CUDA dependencies.",
+                        }
+                    )
+                    sys.exit(1)
+
+            exit_code = run_sys_audio_stream_loop(
+                session_id=session_id,
+                backend=backend,
+                source=source,
+                language=language,
+                vad_filter_arg=args.vad_filter,
+                output_dir=output_dir,
+            )
+            sys.exit(exit_code)
+        except Exception as error:
+            emit_stream_message(
+                {
+                    "kind": "fatal",
+                    "sessionId": session_id,
+                    "message": f"worker stream fatal error: {error}",
+                }
+            )
+            sys.exit(1)
 
     if mode == "mic_stream":
         try:

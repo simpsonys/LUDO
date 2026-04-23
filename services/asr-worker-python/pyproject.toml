@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26.0",
-  "faster-whisper>=1.0.3"
+  "faster-whisper>=1.0.3",
+  "soundcard>=0.4.3"
 ]
 
 [project.scripts]
