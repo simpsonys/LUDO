@@ -5,7 +5,7 @@ import {
   runScheduledEvents,
   type StreamHandle,
 } from "./mockPipeline";
-import { startMicrophoneChunkedSession } from "./microphonePipeline";
+import { startMicrophoneChunkedSession, startSystemAudioChunkedSession } from "./microphonePipeline";
 import { runPythonFileTranscription } from "./pythonWorkerClient";
 import { createServerAsrAdapter } from "./serverAsrAdapter";
 
@@ -24,6 +24,7 @@ export interface AsrBackendAdapter {
   mode: BackendMode;
   transcribeFile: (request: FileTranscriptionRequest, sink: TranscriptSink) => StreamHandle;
   startMicrophoneSession: (session: SessionRecord, sink: TranscriptSink) => StreamHandle;
+  startSystemAudioSession: (session: SessionRecord, sink: TranscriptSink) => StreamHandle;
   startMockLive: (session: SessionRecord, sink: TranscriptSink) => StreamHandle;
 }
 
@@ -185,6 +186,30 @@ export function createBackendAdapter(mode: BackendMode): AsrBackendAdapter {
       }
 
       const job = startMicrophoneChunkedSession(
+        {
+          session,
+          backend: mode,
+        },
+        sink,
+        mode === "azure_server" && serverAdapter
+          ? {
+              transcribeChunk: (request) => serverAdapter.transcribeMicrophoneChunk(request),
+            }
+          : undefined,
+      );
+
+      return createDeferredStream(job, session.sessionId, sink);
+    },
+    startSystemAudioSession(session, sink) {
+      if (mode === "azure_server" && serverAdapter) {
+        try {
+          serverAdapter.validateConfig();
+        } catch (error) {
+          return createBackendConfigErrorStream(session, toErrorMessage(error), sink);
+        }
+      }
+
+      const job = startSystemAudioChunkedSession(
         {
           session,
           backend: mode,

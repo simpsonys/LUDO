@@ -38,12 +38,21 @@ export interface SessionSeed {
 
 export function createSessionRecord(seed: SessionSeed = {}): SessionRecord {
   const now = Date.now();
+  const date = new Date(now);
   const source = seed.source ?? "file";
   const backend = seed.backend ?? "local_gpu";
 
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  const sessionId = `session-${yyyy}${mm}${dd}_${hh}${min}_${ss}`;
+
   return {
-    sessionId: `session-${now}`,
-    title: seed.title ?? `LUDO Session ${new Date(now).toISOString()}`,
+    sessionId,
+    title: seed.title ?? `LUDO Session ${date.toISOString()}`,
     createdAt: now,
     updatedAt: now,
     source,

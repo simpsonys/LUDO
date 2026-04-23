@@ -96,11 +96,22 @@ export default function App() {
   const stateRef = useRef(state);
   const streamRef = useRef<StreamHandle | null>(null);
   const runRef = useRef(0);
+  
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const eventsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     stateRef.current = state;
     persistSessionSnapshot(toSessionSnapshot(state));
   }, [state]);
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [state.finalSegments, state.interimText]);
+
+  useEffect(() => {
+    eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [state.events]);
 
   useEffect(() => {
     if (!isRunning) {
@@ -246,6 +257,30 @@ export default function App() {
     streamRef.current = handle;
   };
 
+  const startSystemAudioSession = () => {
+    const session = createSessionRecord({
+      source: "system",
+      backend: selectedBackend,
+      language: selectedLanguage,
+      computeType: selectedBackend === "local_gpu" ? selectedComputeType : undefined,
+      title: `LUDO System Audio Session (${labelForBackend(selectedBackend)})`,
+    });
+
+    const initial = createInitialSessionState(session);
+    prepareRun(initial);
+    const runId = runRef.current;
+    const adapter = createBackendAdapter(selectedBackend);
+
+    if (selectedBackend === "local_gpu" || selectedBackend === "local_cpu") {
+      setActionMessage("Starting system audio capture...");
+    } else {
+      setActionMessage("Starting system audio capture with Azure-first server ASR adapter...");
+    }
+
+    const handle = adapter.startSystemAudioSession(session, (event) => emitEvent(event, runId));
+    streamRef.current = handle;
+  };
+
   const stopRun = async () => {
     const activeHandle = streamRef.current;
     if (!activeHandle) {
@@ -380,6 +415,9 @@ export default function App() {
           <button onClick={startMicrophoneSession} disabled={isRunning}>
             Start Microphone
           </button>
+          <button onClick={startSystemAudioSession} disabled={isRunning}>
+            Start System Audio
+          </button>
           <button onClick={stopRun} disabled={!isRunning}>
             Stop
           </button>
@@ -435,18 +473,16 @@ export default function App() {
 
       <main className="layout">
         <section className="panel transcript">
-          <h2>Transcript Stream</h2>
+          <h2>📝 Transcript Stream</h2>
           <div className="transcript-feed">
             {state.finalSegments.map((segment) => (
               <div key={segment.segmentId} className="line final">
-                <span className="badge">final</span>
                 <p>{segment.text}</p>
               </div>
             ))}
 
             {state.interimText ? (
               <div className="line interim">
-                <span className="badge">interim</span>
                 <p>{state.interimText}</p>
               </div>
             ) : null}
@@ -454,22 +490,22 @@ export default function App() {
             {state.finalSegments.length === 0 && !state.interimText ? (
               <p className="empty">No transcript yet. Run file transcription or start microphone capture.</p>
             ) : null}
+            <div ref={transcriptEndRef} />
           </div>
         </section>
 
         <section className="panel events">
-          <h2>Event Log</h2>
+          <h2>⚡ Event Log</h2>
           <ul>
             {state.events
               .slice()
-              .reverse()
-              .slice(0, 18)
               .map((event, index) => (
                 <li key={`${event.type}-${index}`}>
                   <code>{event.type}</code>
                   <span>{describeEvent(event)}</span>
                 </li>
               ))}
+            <div ref={eventsEndRef} />
           </ul>
         </section>
       </main>

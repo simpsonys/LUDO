@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { BackendMode, SessionRecord, TranscriptEvent } from "@ludo/transcript-schema";
 import type { TranscriptSink } from "./backendAdapter";
 import type { StreamHandle } from "./mockPipeline";
@@ -171,6 +172,48 @@ export async function startMicrophoneChunkedSession(
       throw new Error(mapMicrophoneError(error));
     });
 
+  return startAudioChunkedSessionImpl(mediaStream, request, sink, options, "mic");
+}
+
+export async function startSystemAudioChunkedSession(
+  request: MicrophoneSessionRequest,
+  sink: TranscriptSink,
+  options: StartMicrophoneChunkedSessionOptions = {},
+): Promise<StreamHandle> {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    throw new Error("System audio capture is not supported in this runtime.");
+  }
+
+  const mediaStream = await navigator.mediaDevices
+    .getDisplayMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      video: true, // video is required for getDisplayMedia, but we will ignore the video tracks
+    })
+    .catch((error: unknown) => {
+      throw new Error(`System audio capture failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+
+  const audioTracks = mediaStream.getAudioTracks();
+  if (audioTracks.length === 0) {
+    mediaStream.getTracks().forEach((track) => track.stop());
+    throw new Error("No audio track was shared. Please make sure to check 'Share audio' when selecting the screen/window.");
+  }
+
+  return startAudioChunkedSessionImpl(mediaStream, request, sink, options, "system");
+}
+
+async function startAudioChunkedSessionImpl(
+  mediaStream: MediaStream,
+  request: MicrophoneSessionRequest,
+  sink: TranscriptSink,
+  options: StartMicrophoneChunkedSessionOptions,
+  sourceLabel: "mic" | "system"
+): Promise<StreamHandle> {
   const audioContext = new AudioContext();
   await audioContext.resume();
   const sourceNode = audioContext.createMediaStreamSource(mediaStream);
@@ -187,7 +230,7 @@ export async function startMicrophoneChunkedSession(
   const channels = 1;
   const chunkTargetSamples = Math.max(1024, Math.floor((sampleRate * CHUNK_DURATION_MS) / 1000));
 
-  console.info("[LUDO][mic] capture-start", {
+  console.info(`[LUDO][${sourceLabel}] capture-start`, {
     sampleRate,
     channels,
     chunkDurationMs: CHUNK_DURATION_MS,
@@ -225,7 +268,7 @@ export async function startMicrophoneChunkedSession(
       const stopResult = await stopPythonMicrophoneWorker({
         session: request.session,
       });
-      console.info("[LUDO][mic] persistent-worker-stop", {
+      console.info(`[LUDO][${sourceLabel}] persistent-worker-stop`, {
         sessionId,
         backend: request.backend,
         reason,
@@ -233,7 +276,7 @@ export async function startMicrophoneChunkedSession(
         detail: stopResult.detail,
       });
     } catch (error) {
-      console.warn("[LUDO][mic] persistent-worker-stop failed", {
+      console.warn(`[LUDO][${sourceLabel}] persistent-worker-stop failed`, {
         sessionId,
         backend: request.backend,
         reason,
@@ -252,7 +295,7 @@ export async function startMicrophoneChunkedSession(
       });
       persistentWorkerActive = true;
 
-      console.info("[LUDO][mic] persistent-worker-ready", {
+      console.info(`[LUDO][${sourceLabel}] persistent-worker-ready`, {
         sessionId,
         backend: request.backend,
         language: request.session.language,
@@ -272,7 +315,7 @@ export async function startMicrophoneChunkedSession(
           `compute=${readyInfo.computeType} startupMs=${readyInfo.workerStartupMs} modelLoadMs=${readyInfo.modelLoadMs}`,
       });
     } catch (error) {
-      console.warn("[LUDO][mic] persistent-worker-start failed; fallback to per-chunk worker spawn", {
+      console.warn(`[LUDO][${sourceLabel}] persistent-worker-start failed; fallback to per-chunk worker spawn`, {
         sessionId,
         backend: request.backend,
         error: String(error),
@@ -323,6 +366,8 @@ export async function startMicrophoneChunkedSession(
   const pendingFrames: Float32Array[] = [];
   let pendingSampleCount = 0;
 
+  const fullSessionFrames: Float32Array[] = [];
+
   let processingQueue: Promise<void> = Promise.resolve();
 
   const failAndStopCapture = (error: unknown) => {
@@ -357,7 +402,7 @@ export async function startMicrophoneChunkedSession(
     const chunkDurationMs =
       explicitDurationMs ?? Math.max(1, Math.round((samples.length / sampleRate) * 1000));
 
-    console.debug("[LUDO][mic] chunk-submit", {
+    console.debug(`[LUDO][${sourceLabel}] chunk-submit`, {
       chunkIndex: activeChunkIndex,
       sampleRate,
       channels,
@@ -410,7 +455,7 @@ export async function startMicrophoneChunkedSession(
                 language: request.session.language,
               });
               persistentWorkerActive = true;
-              console.info("[LUDO][mic] persistent-worker-recovered", {
+              console.info(`[LUDO][${sourceLabel}] persistent-worker-recovered`, {
                 sessionId,
                 backend: request.backend,
                 model: readyInfo.model,
@@ -438,7 +483,7 @@ export async function startMicrophoneChunkedSession(
                 state: "error",
                 detail: "persistent worker recovery failed; falling back to per-chunk worker spawn",
               });
-              console.warn("[LUDO][mic] persistent-worker-recovery failed; fallback", {
+              console.warn(`[LUDO][${sourceLabel}] persistent-worker-recovery failed; fallback`, {
                 sessionId,
                 backend: request.backend,
                 error: String(restartError),
@@ -452,7 +497,7 @@ export async function startMicrophoneChunkedSession(
         const result = await runChunk();
 
         if ("processingLatencyMs" in result) {
-          console.debug("[LUDO][mic] persistent-worker-chunk", {
+          console.debug(`[LUDO][${sourceLabel}] persistent-worker-chunk`, {
             sessionId,
             backend: result.backend,
             chunkIndex: activeChunkIndex,
@@ -492,7 +537,7 @@ export async function startMicrophoneChunkedSession(
           state: "error",
           detail: `transient chunk failure on chunk=${activeChunkIndex}; continuing (${consecutiveChunkErrors}/${MAX_CONSECUTIVE_CHUNK_ERRORS})`,
         });
-        console.warn("[LUDO][mic] transient chunk failure, continuing", {
+        console.warn(`[LUDO][${sourceLabel}] transient chunk failure, continuing`, {
           chunkIndex: activeChunkIndex,
           backend: request.backend,
           consecutiveChunkErrors,
@@ -526,6 +571,7 @@ export async function startMicrophoneChunkedSession(
     const copy = new Float32Array(input.length);
     copy.set(input);
     pendingFrames.push(copy);
+    fullSessionFrames.push(copy);
     pendingSampleCount += copy.length;
 
     if (pendingSampleCount >= chunkTargetSamples) {
@@ -566,6 +612,25 @@ export async function startMicrophoneChunkedSession(
 
       void processingQueue.finally(() => {
         void (async () => {
+          try {
+            if (fullSessionFrames.length > 0) {
+              const merged = mergeFloat32Chunks(fullSessionFrames);
+              const wavBytes = encodeMonoPcm16Wav(merged, sampleRate);
+              
+              if (typeof window !== "undefined" && window.__TAURI_INTERNALS__?.invoke) {
+                await invoke("save_microphone_recording", {
+                  request: {
+                    sessionId,
+                    wavBytes: Array.from(wavBytes),
+                  },
+                });
+                console.info(`[LUDO][${sourceLabel}] saved full session recording`);
+              }
+            }
+          } catch (err) {
+            console.error(`[LUDO][${sourceLabel}] failed to save full session recording`, err);
+          }
+
           await stopPersistentWorker("session stop");
 
           if (encounteredError) {

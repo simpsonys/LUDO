@@ -1462,6 +1462,38 @@ fn write_session_artifacts(
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveMicrophoneRecordingRequest {
+    session_id: String,
+    wav_bytes: Vec<u8>,
+}
+
+#[tauri::command]
+fn save_microphone_recording(
+    app: tauri::AppHandle,
+    request: SaveMicrophoneRecordingRequest,
+) -> Result<String, String> {
+    let app_local_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("unable to resolve app local data directory: {error}"))?;
+
+    let raw_dir = app_local_dir
+        .join("sessions")
+        .join(&request.session_id)
+        .join("raw");
+    fs::create_dir_all(&raw_dir)
+        .map_err(|error| format!("failed to create session raw directory: {error}"))?;
+
+    let full_session_path = raw_dir.join("full_session.wav");
+
+    fs::write(&full_session_path, &request.wav_bytes)
+        .map_err(|error| format!("failed to write full_session.wav: {error}"))?;
+
+    Ok(full_session_path.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1472,7 +1504,8 @@ pub fn run() {
             process_python_microphone_chunk_transcription,
             stop_python_microphone_worker,
             run_python_microphone_chunk_transcription,
-            write_session_artifacts
+            write_session_artifacts,
+            save_microphone_recording
         ])
         .run(tauri::generate_context!())
         .expect("error while running ludo tauri app");

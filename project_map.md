@@ -72,6 +72,7 @@ Provider-specific logic must stay isolated in adapter files only.
 - desktop Tauri runtime
 - local file transcription
 - microphone transcription
+- Windows system audio capture (via getDisplayMedia)
 - `local_cpu` ASR path
 - `local_gpu` ASR path
 - persistent microphone worker path
@@ -84,7 +85,6 @@ Provider-specific logic must stay isolated in adapter files only.
 - Azure backend routing in UI/state
 
 ### Not Started
-- Windows system audio capture
 - artifact generation
 - RAG / Q&A
 - MCP integration
@@ -419,8 +419,8 @@ sessions/{sessionId}/
 5. **Persistent worker is the primary microphone path**
    - avoid reintroducing per-chunk process spawning as the main path unless guarded as fallback/debug mode
 
-6. **Windows system audio capture is not implemented yet**
-   - `SessionSource = "system"` may exist in types, but no real capture path exists yet
+6. **Windows system audio capture is implemented via WebRTC (`getDisplayMedia`)**
+   - `SessionSource = "system"` is fully hooked up
 
 7. **Artifact generation is not implemented yet**
    - do not confuse session persistence with artifact generation
