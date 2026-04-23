@@ -1,7 +1,7 @@
 {
   "name": "ludo",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "LUDO monorepo - Listen. Understand. Distill. Organize.",
   "packageManager": "pnpm@10.9.0",
   "scripts": {
