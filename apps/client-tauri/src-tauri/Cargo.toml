@@ -1,6 +1,6 @@
 [package]
 name = "ludo_client_tauri"
-version = "0.1.1"
+version = "0.1.2"
 description = "LUDO desktop client"
 authors = ["LUDO"]
 edition = "2021"
