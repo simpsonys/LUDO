@@ -116,13 +116,36 @@ export function applyTranscriptEvent(
   }
 
   if (event.type === "final") {
+    const isMic = session.source === "mic" || session.source === "system";
+    let updatedFinalSegments = [...current.finalSegments];
+    
+    if (isMic && updatedFinalSegments.length > 0) {
+      const last = updatedFinalSegments[updatedFinalSegments.length - 1];
+      const timeDiff = event.startMs && last.endMs ? event.startMs - last.endMs : 0;
+      
+      // If the segments are close in time and the previous doesn't end with strong punctuation, merge them
+      const endsWithPunctuation = /[.!?]$|[다요죠까네]$/.test(last.text.trim());
+      
+      if (timeDiff < 2000 && !endsWithPunctuation) {
+        last.text = `${last.text} ${event.text}`.trim();
+        last.endMs = event.endMs;
+        return {
+          ...current,
+          session,
+          events,
+          interimText: "",
+          finalSegments: updatedFinalSegments,
+        };
+      }
+    }
+
     return {
       ...current,
       session,
       events,
       interimText: "",
       finalSegments: [
-        ...current.finalSegments,
+        ...updatedFinalSegments,
         {
           segmentId: event.segmentId,
           text: event.text,

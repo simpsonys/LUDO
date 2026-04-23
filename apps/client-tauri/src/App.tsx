@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BackendMode, SessionLanguage, TranscriptEvent } from "@ludo/transcript-schema";
 import { BACKEND_MODES, createBackendAdapter, type StreamHandle } from "./asr/backendAdapter";
@@ -85,7 +86,7 @@ function describeEvent(event: TranscriptEvent): string {
 export default function App() {
   const [state, setState] = useState<SessionState>(() => loadInitialState());
   const [selectedBackend, setSelectedBackend] = useState<BackendMode>("local_gpu");
-  const [selectedLanguage, setSelectedLanguage] = useState<SessionLanguage>("auto");
+  const [selectedLanguage, setSelectedLanguage] = useState<SessionLanguage>("ko");
   const [selectedComputeType, setSelectedComputeType] = useState<string>("float16");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -343,6 +344,10 @@ export default function App() {
     setActionMessage("Restored latest local snapshot.");
   };
 
+  const openPath = (path: string) => {
+    void invoke("open_path", { path });
+  };
+
   const snapshot = toSessionSnapshot(state);
   const plannedLayout = planSessionLayout(state.session.sessionId);
 
@@ -387,8 +392,8 @@ export default function App() {
               onChange={(event) => setSelectedLanguage(event.target.value as SessionLanguage)}
               disabled={isRunning}
             >
-              <option value="auto">Auto</option>
               <option value="ko">Korean (ko)</option>
+              <option value="auto">Auto</option>
               <option value="en">English (en)</option>
             </select>
           </label>
@@ -511,29 +516,47 @@ export default function App() {
       </main>
 
       <section className="panel persistence">
-        <h2>Session Artifact Writer</h2>
+        <h2>💾 Session Artifact Writer</h2>
         <p>{actionMessage}</p>
         <p className="layout-plan">
           Planned structure: {plannedLayout.sessionJsonPath}, {plannedLayout.eventsJsonlPath}, {plannedLayout.transcriptMdPath}
         </p>
         {writeResult ? (
           <div className="write-result">
-            <p>
-              <strong>Persisted:</strong> {writeResult.persisted ? "yes" : "no"}
-            </p>
-            <p>
-              <strong>Message:</strong> {writeResult.message}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.65rem' }}>
+              <div>
+                <p>
+                  <strong>Persisted:</strong> {writeResult.persisted ? "yes" : "no"}
+                </p>
+                <p>
+                  <strong>Message:</strong> {writeResult.message}
+                </p>
+              </div>
+              {writeResult.sessionDir && (
+                <button onClick={() => openPath(writeResult.sessionDir!)}>
+                  📂 Open Folder
+                </button>
+              )}
+            </div>
             {writeResult.persisted ? (
               <>
                 <p>
-                  <strong>session.json:</strong> {writeResult.sessionJsonPath}
+                  <strong>session.json:</strong>{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); openPath(writeResult.sessionJsonPath!); }}>
+                    {writeResult.sessionJsonPath}
+                  </a>
                 </p>
                 <p>
-                  <strong>events.jsonl:</strong> {writeResult.eventsJsonlPath}
+                  <strong>events.jsonl:</strong>{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); openPath(writeResult.eventsJsonlPath!); }}>
+                    {writeResult.eventsJsonlPath}
+                  </a>
                 </p>
                 <p>
-                  <strong>transcript.md:</strong> {writeResult.transcriptMdPath}
+                  <strong>transcript.md:</strong>{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); openPath(writeResult.transcriptMdPath!); }}>
+                    {writeResult.transcriptMdPath}
+                  </a>
                 </p>
               </>
             ) : null}

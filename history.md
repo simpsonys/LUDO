@@ -1,32 +1,34 @@
-# Current Goal
-Implement UI/UX polishing (dark theme, scrollable text-box logs, remove "FINAL" badges), timestamp-based session IDs, and full raw audio persistence during mic recording.
+# LUDO AI Agent History
 
-# Completed Steps
-- Read project guidelines and App.tsx structure.
-- Update CSS for black theme.
-- Update App.tsx layout for scrollable panels and remove badges.
-- Update sessionStore.ts to use `session-YYYYMMDD_HHMM_SS` format.
-- Update microphonePipeline.ts to accumulate raw audio and write to `<session-folder>/raw/full_session.wav` when stopped using a new Tauri command.
-- Verified build and rust checks.
+## Current Goal
+Implement native Windows system audio capture using `soundcard` library in Python worker, bypassing frontend `getDisplayMedia` to improve stability and keep audio processing in the native layer.
 
-# Pending Steps
-- Write commit summary
+## Completed Steps
+- [x] Initialized architecture planning
 
-# Exact Next Action
-Write suggested commit and complete task.
+## Pending Steps
+- [ ] 1. Update `services/asr-worker-python/pyproject.toml` to include `soundcard` dependency.
+- [ ] 2. Update `worker.py` to add `sys_audio_stream` mode capturing WASAPI loopback audio.
+- [ ] 3. Ensure `worker.py` in `sys_audio_stream` mode saves full session audio to `raw/full_session.wav`.
+- [ ] 4. Update `apps/client-tauri/src/asr/microphonePipeline.ts` (or `backendAdapter.ts` / `App.tsx`) to start the `sys_audio_stream` worker and handle events, instead of using `getDisplayMedia`.
+- [ ] 5. Update `lib.rs` and `pythonWorkerClient.ts` if a new Tauri command or updated struct is needed.
+- [ ] 6. Build and verify end-to-end functionality.
 
-# Last Updated
-2026-04-23T15:18:00.000Z
+## Exact Next Action
+Switch to `code` mode to start modifying `pyproject.toml` and Python worker code.
 
-# Current Agent
-💻 Code
+## Last Updated
+2026-04-23
 
-# Working Branch
--
+## Current Agent
+Gemini Pro (Architect) -> Switching to Code
 
-# Relevant Files
-- apps/client-tauri/src/styles.css
-- apps/client-tauri/src/App.tsx
-- apps/client-tauri/src/session/sessionStore.ts
-- apps/client-tauri/src/asr/microphonePipeline.ts
-- apps/client-tauri/src-tauri/src/lib.rs
+## Working Branch
+main
+
+## Relevant Files
+- `services/asr-worker-python/pyproject.toml`
+- `services/asr-worker-python/src/asr_worker_python/worker.py`
+- `apps/client-tauri/src/asr/microphonePipeline.ts`
+- `apps/client-tauri/src-tauri/src/lib.rs`
+- `apps/client-tauri/src/asr/pythonWorkerClient.ts`

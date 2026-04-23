@@ -263,6 +263,16 @@ button:disabled {
   margin: 0.15rem 0;
 }
 
+.write-result a {
+  color: #66b2ff;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.write-result a:hover {
+  text-decoration: underline;
+}
+
 .persistence pre {
   margin: 0;
   max-height: 260px;

@@ -1494,6 +1494,18 @@ fn save_microphone_recording(
     Ok(full_session_path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1505,7 +1517,8 @@ pub fn run() {
             stop_python_microphone_worker,
             run_python_microphone_chunk_transcription,
             write_session_artifacts,
-            save_microphone_recording
+            save_microphone_recording,
+            open_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running ludo tauri app");

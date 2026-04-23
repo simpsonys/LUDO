@@ -25,8 +25,8 @@ interface StartMicrophoneChunkedSessionOptions {
   transcribeChunk?: MicrophoneChunkTranscriber;
 }
 
-const CHUNK_DURATION_MS = 2500;
-const MIN_FLUSH_MS = 650;
+const CHUNK_DURATION_MS = 3000;
+const MIN_FLUSH_MS = 800;
 const MAX_CONSECUTIVE_CHUNK_ERRORS = 3;
 const PERSISTENT_WORKER_BACKENDS: BackendMode[] = ["local_gpu", "local_cpu"];
 
