@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+src/asr_server_python/__init__.py
+src/asr_server_python/main.py
+src/ludo_asr_server_python.egg-info/PKG-INFO
+src/ludo_asr_server_python.egg-info/SOURCES.txt
+src/ludo_asr_server_python.egg-info/dependency_links.txt
+src/ludo_asr_server_python.egg-info/entry_points.txt
+src/ludo_asr_server_python.egg-info/requires.txt
+src/ludo_asr_server_python.egg-info/top_level.txt

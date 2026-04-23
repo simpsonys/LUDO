@@ -1,0 +1,29 @@
+# LUDO ASR Server (Azure-first)
+
+This service provides the Azure-first server ASR gateway used by the desktop `azure_server` backend path.
+
+## Endpoints
+
+- `GET /healthz`
+- `POST /v1/asr/azure/file-transcriptions`
+- `POST /v1/asr/azure/microphone-chunks`
+
+Response payloads are provider-side objects; the desktop adapter normalizes them into provider-neutral `TranscriptEvent` values.
+
+## Environment
+
+- `LUDO_AZURE_SPEECH_KEY` (required, unless provided via `x-api-key`)
+- `LUDO_AZURE_SPEECH_REGION` (required)
+- `LUDO_AZURE_DEFAULT_LANGUAGE` (optional, default `ko-KR`)
+- `LUDO_ASR_SERVER_HOST` (optional, default `127.0.0.1`)
+- `LUDO_ASR_SERVER_PORT` (optional, default `8080`)
+
+## Run
+
+```bash
+python -m pip install -e ./services/asr-server-python
+set LUDO_AZURE_SPEECH_KEY=<your_key>
+set LUDO_AZURE_SPEECH_REGION=<your_region>
+python -m asr_server_python.main
+```
+

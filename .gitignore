@@ -1,0 +1,22 @@
+node_modules/
+.pnpm-store/
+.env
+.env.*
+*.log
+
+# Build outputs
+**/dist/
+**/target/
+**/.vite/
+
+# Rust / Tauri
+**/src-tauri/target/
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+
+# OS
+.DS_Store
+Thumbs.db

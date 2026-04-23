@@ -1,0 +1,23 @@
+[project]
+name = "ludo-asr-server-python"
+version = "0.1.0"
+description = "LUDO Azure-first server ASR gateway"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "python-multipart>=0.0.9",
+  "azure-cognitiveservices-speech>=1.40.0"
+]
+
+[project.scripts]
+ludo-asr-server = "asr_server_python.main:run"
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

@@ -1,0 +1,252 @@
+:root {
+  font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #12222d;
+  background: radial-gradient(circle at top left, #f3f7ff 0%, #f6f8fb 46%, #e9eff3 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  width: min(1120px, calc(100% - 3rem));
+  margin: 1.75rem auto 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.hero {
+  background: linear-gradient(122deg, #102b40 0%, #1f4a58 54%, #2b6f65 100%);
+  color: #eef9ff;
+  border-radius: 16px;
+  padding: 1.25rem 1.4rem;
+  box-shadow: 0 10px 26px rgba(16, 43, 64, 0.2);
+}
+
+.label {
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0;
+  opacity: 0.9;
+}
+
+.hero h1 {
+  margin: 0.2rem 0 0.1rem;
+  font-size: clamp(1.4rem, 1.8vw, 1.95rem);
+}
+
+.subtext {
+  margin: 0.15rem 0 1rem;
+  opacity: 0.9;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.controls label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.83rem;
+}
+
+.controls select,
+.controls input[type="file"] {
+  border: 1px solid #d2e4f0;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: #113245;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.92rem;
+  background: #dbe8ef;
+  color: #133140;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #ffce5e;
+  color: #2b1b00;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.status-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #dbe4ec;
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.card span {
+  font-size: 0.78rem;
+  color: #4c6370;
+}
+
+.card strong {
+  font-size: 0.93rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 1rem;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dbe4ec;
+  border-radius: 12px;
+  padding: 0.9rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.transcript-feed {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.line {
+  border: 1px solid #dde7ed;
+  background: #f9fcff;
+  border-radius: 10px;
+  padding: 0.55rem;
+}
+
+.line p {
+  margin: 0.2rem 0 0;
+}
+
+.line.interim {
+  border-style: dashed;
+  background: #fff9ec;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #163d59;
+  color: #ecf8ff;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+}
+
+.line.interim .badge {
+  background: #8a5200;
+}
+
+.empty {
+  margin: 0.6rem 0 0;
+  color: #506671;
+}
+
+.events ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.events li {
+  border: 1px solid #e1e8ee;
+  border-radius: 8px;
+  padding: 0.45rem 0.5rem;
+  background: #f9fbfd;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.events code {
+  font-size: 0.78rem;
+  color: #1a4057;
+}
+
+.events span {
+  font-size: 0.87rem;
+  color: #304e61;
+}
+
+.persistence p {
+  margin-top: 0;
+  color: #3f5c6c;
+}
+
+.layout-plan {
+  font-size: 0.82rem;
+}
+
+.write-result {
+  border: 1px solid #dde6eb;
+  border-radius: 10px;
+  background: #f8fbfd;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+.write-result p {
+  margin: 0.15rem 0;
+}
+
+.persistence pre {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 10px;
+  background: #0f2130;
+  color: #e5f2ff;
+  padding: 0.75rem;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 920px) {
+  .app-shell {
+    width: min(1120px, calc(100% - 1.35rem));
+    margin-top: 1rem;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

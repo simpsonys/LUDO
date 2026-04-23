@@ -1,0 +1,14 @@
+{
+  "name": "ludo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LUDO monorepo - Listen. Understand. Distill. Organize.",
+  "packageManager": "pnpm@10.9.0",
+  "scripts": {
+    "dev:web": "pnpm --dir apps/client-tauri dev",
+    "dev:desktop": "pnpm --dir apps/client-tauri tauri dev",
+    "dev:asr-server": "python -m asr_server_python.main",
+    "build:web": "pnpm --dir apps/client-tauri build",
+    "check": "pnpm --dir apps/client-tauri check"
+  }
+}

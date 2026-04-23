@@ -1,0 +1,2 @@
+[console_scripts]
+ludo-asr-server = asr_server_python.main:run

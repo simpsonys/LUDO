@@ -1,0 +1,20 @@
+[project]
+name = "ludo-asr-worker-python"
+version = "0.1.0"
+description = "LUDO Phase 1 local file-transcription worker"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26.0",
+  "faster-whisper>=1.0.3"
+]
+
+[project.scripts]
+ludo-asr-worker = "asr_worker_python.worker:main"
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
