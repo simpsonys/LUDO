@@ -1,4 +1,0 @@
-fix: Gemini API 모델을 최신 버전으로 업데이트
-
-- Gemini API 호출 시 사용되는 모델 `gemini-2.0-flash`가 더 이상 지원되지 않아 발생하는 오류를 수정했습니다.
-- 최신 모델인 `gemini-1.5-flash-latest`를 사용하도록 업데이트했습니다.

@@ -263,6 +263,7 @@ function normalizeAzurePayload(
         events.push({
           type: "error",
           sessionId: context.sessionId,
+          at: Date.now(),
           message: `[azure_server] ${message}`,
         });
       }
@@ -308,6 +309,7 @@ function normalizeAzurePayload(
       {
         type: "error",
         sessionId: context.sessionId,
+        at: Date.now(),
         message: `[azure_server] ${topLevelMessage}`,
       },
     ];

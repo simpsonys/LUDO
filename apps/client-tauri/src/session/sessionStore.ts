@@ -1,6 +1,5 @@
 import type {
   BackendMode,
-  BackendRuntimeState,
   SessionLanguage,
   SessionRecord,
   SessionSnapshot,

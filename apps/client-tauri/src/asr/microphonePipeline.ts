@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BackendMode, SessionRecord, TranscriptEvent } from "@ludo/transcript-schema";
+import type { BackendMode, SessionRecord, StreamHandle, TranscriptEvent } from "@ludo/transcript-schema";
 import type { TranscriptSink } from "./backendAdapter";
-import type { StreamHandle } from "./mockPipeline";
 import {
   startPythonMicrophoneWorker,
   stopPythonMicrophoneWorker,
@@ -210,6 +209,7 @@ export async function startSystemAudioChunkedSession(
           sink({
             type: "error",
             sessionId: request.session.sessionId,
+            at: Date.now(),
             message: `System audio stream error: ${e}`,
           });
           active = false;
@@ -408,6 +408,7 @@ async function startAudioChunkedSessionImpl(
     sink({
       type: "error",
       sessionId,
+      at: Date.now(),
       message,
     });
     sink({

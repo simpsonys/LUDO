@@ -5,7 +5,7 @@ import {
   runScheduledEvents,
 } from "./mockPipeline";
 import { startMicrophoneChunkedSession, startSystemAudioChunkedSession } from "./microphonePipeline";
-import { runPythonFileTranscription, runPythonFileTranscriptionStreamed } from "./pythonWorkerClient";
+import { runPythonFileTranscriptionStreamed } from "./pythonWorkerClient";
 import { createServerAsrAdapter } from "./serverAsrAdapter";
 
 
