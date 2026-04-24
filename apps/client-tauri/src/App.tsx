@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BackendMode, SessionLanguage, TranscriptEvent } from "@ludo/transcript-schema";
-import { BACKEND_MODES, createBackendAdapter, type StreamHandle } from "./asr/backendAdapter";
+import type { BackendMode, SessionLanguage, StreamHandle, TranscriptEvent } from "@ludo/transcript-schema";
+import { BACKEND_MODES, createBackendAdapter } from "./asr/backendAdapter";
 import {
   loadLatestSessionSnapshot,
   planSessionLayout,
@@ -101,7 +101,7 @@ export default function App() {
   const [writeResult, setWriteResult] = useState<SessionWriteResult | null>(null);
   const [artifactResult, setArtifactResult] = useState<ArtifactGenerateResult | null>(null);
   const [isGeneratingArtifacts, setIsGeneratingArtifacts] = useState(false);
-  const [selectedArtifactProvider, setSelectedArtifactProvider] = useState<ArtifactProvider>("anthropic");
+  const [selectedArtifactProvider, setSelectedArtifactProvider] = useState<ArtifactProvider>("gemini");
 
   const stateRef = useRef(state);
   const streamRef = useRef<StreamHandle | null>(null);

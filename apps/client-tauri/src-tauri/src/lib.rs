@@ -1831,7 +1831,7 @@ async fn call_gemini(api_key: &str, prompt: &str, transcript: &str) -> Result<St
     let client = reqwest::Client::new();
     let user_content = format!("{}\n\n## 전사본 (Transcript)\n\n{}", prompt, transcript);
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={}",
         api_key
     );
     let body = json!({
@@ -1894,7 +1894,7 @@ async fn generate_session_artifacts(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .or_else(|| std::env::var("LUDO_ARTIFACT_PROVIDER").ok())
-        .unwrap_or_else(|| "anthropic".to_string());
+        .unwrap_or_else(|| "gemini".to_string());
 
     let provider = LlmProvider::from_str(&provider_str).ok_or_else(|| {
         format!("지원하지 않는 provider '{}'. anthropic/openai/gemini 중 하나를 선택하세요.", provider_str)
@@ -1973,6 +1973,21 @@ fn open_path(path: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load .env file from src-tauri/.env
+    if let Ok(path) = std::env::current_dir() {
+        let env_path = path.join(".env");
+        if env_path.exists() {
+            dotenvy::from_path(&env_path).ok();
+            eprintln!("[LUDO][env] loaded .env from {:?}", env_path);
+        } else {
+            dotenvy::dotenv().ok();
+            eprintln!("[LUDO][env] loaded .env from current or parent directories");
+        }
+    } else {
+        dotenvy::dotenv().ok();
+        eprintln!("[LUDO][env] loaded .env from current or parent directories (current dir unknown)");
+    }
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             ludo_ping,

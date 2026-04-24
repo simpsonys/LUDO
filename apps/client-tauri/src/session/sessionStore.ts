@@ -20,7 +20,7 @@ export interface SessionState {
   events: TranscriptEvent[];
   finalSegments: FinalSegment[];
   interimText: string;
-  backendRuntime: BackendRuntimeState;
+  backendRuntime: string;
   startedAt?: number;
   endedAt?: number;
   lastError?: string;
@@ -121,7 +121,7 @@ export function applyTranscriptEvent(
       ...current,
       session,
       events,
-      backendRuntime: event.state,
+      backendRuntime: `${event.state}${event.detail ? ` (${event.detail})` : ""}`,
     };
   }
 
@@ -190,7 +190,7 @@ export function applyTranscriptEvent(
       events,
       interimText: "",
       endedAt: event.at,
-      backendRuntime: current.backendRuntime === "error" ? "error" : "completed",
+      backendRuntime: current.backendRuntime.startsWith("error") ? "error" : "completed",
     };
   }
 
