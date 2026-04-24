@@ -46,6 +46,19 @@ function isDesktopTauriRuntime(): boolean {
   return false;
 }
 
+export async function resolveSessionPaths(sessionId: string): Promise<SessionWriteResult | null> {
+  if (!isDesktopTauriRuntime()) {
+    return null;
+  }
+
+  try {
+    const response = await invoke<NativeWriteResponse>("resolve_session_paths", { sessionId });
+    return { persisted: true, message: "Session artifacts written successfully.", ...response };
+  } catch {
+    return null;
+  }
+}
+
 export async function writeSessionArtifacts(
   session: SessionRecord,
   events: TranscriptEvent[],

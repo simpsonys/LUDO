@@ -1399,6 +1399,27 @@ fn run_python_microphone_chunk_transcription(
 }
 
 #[tauri::command]
+fn resolve_session_paths(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<WriteSessionArtifactsResponse, String> {
+    let app_local_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("unable to resolve app local data directory: {e}"))?;
+
+    let session_dir = app_local_dir.join("sessions").join(&session_id);
+    let transcript_dir = session_dir.join("transcript");
+
+    Ok(WriteSessionArtifactsResponse {
+        session_dir: session_dir.to_string_lossy().to_string(),
+        session_json_path: session_dir.join("session.json").to_string_lossy().to_string(),
+        events_jsonl_path: session_dir.join("events.jsonl").to_string_lossy().to_string(),
+        transcript_md_path: transcript_dir.join("transcript.md").to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
 fn write_session_artifacts(
     app: tauri::AppHandle,
     request: WriteSessionArtifactsRequest,
@@ -1872,6 +1893,7 @@ pub fn run() {
             process_python_microphone_chunk_transcription,
             stop_python_microphone_worker,
             run_python_microphone_chunk_transcription,
+            resolve_session_paths,
             write_session_artifacts,
             save_microphone_recording,
             generate_session_artifacts,

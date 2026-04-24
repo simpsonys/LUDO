@@ -7,7 +7,7 @@ import {
   planSessionLayout,
   persistSessionSnapshot,
 } from "./session/sessionPersistence";
-import { writeSessionArtifacts, type SessionWriteResult } from "./session/sessionFileWriter";
+import { writeSessionArtifacts, resolveSessionPaths, type SessionWriteResult } from "./session/sessionFileWriter";
 import {
   applyTranscriptEvent,
   createInitialSessionState,
@@ -149,6 +149,15 @@ export default function App() {
     },
     [],
   );
+
+  // Restore writeResult after app restart if session already has data
+  useEffect(() => {
+    if (writeResult !== null) return;
+    if (state.finalSegments.length === 0) return;
+    void resolveSessionPaths(state.session.sessionId).then((result) => {
+      if (result) setWriteResult(result);
+    });
+  }, [state.session.sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const elapsedMs = useMemo(() => {
     if (!state.startedAt) {
@@ -374,7 +383,14 @@ export default function App() {
     stateRef.current = hydrated;
     setState(hydrated);
     setIsRunning(false);
+    setWriteResult(null);
     setActionMessage("Restored latest local snapshot.");
+
+    if (latest.events.length > 0) {
+      void resolveSessionPaths(latest.session.sessionId).then((result) => {
+        if (result) setWriteResult(result);
+      });
+    }
   };
 
   const openPath = (path: string) => {
