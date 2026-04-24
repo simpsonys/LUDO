@@ -1,17 +1,20 @@
 # LUDO AI Agent History
 
 ## Current Goal
-Implement the first narrow vertical slice of transcript-centric RAG / Q&A using existing completed session data and generated artifacts.
+Implement the first narrow MCP vertical slice with 3 tools: `get_session_summary`, `search_transcript`, and `read_artifact`.
 
 ## Completed Steps
-- [ ] Stashed previous `history.md`
+- [x] Implementation plan approved by user with constraints.
 
 ## Pending Steps
-- [ ] Present implementation plan to user.
-- [ ] Implement RAG/Q&A feature.
+- [ ] Create a new shared types package for MCP contracts.
+- [ ] Create Rust `mcp.rs` module with tool logic.
+- [ ] Integrate MCP module into `lib.rs` via a single dispatch command.
+- [ ] Create an isolated React component for testing the MCP tools.
+- [ ] Wire up the test component in `App.tsx`.
 
 ## Exact Next Action
-Switch to Architect mode and present implementation plan.
+Create a new shared types package `packages/mcp-types`.
 
 ## Last Updated
 2026-04-24
@@ -23,7 +26,8 @@ Code
 main
 
 ## Relevant Files
-- `apps/client-tauri/src/App.tsx`
 - `apps/client-tauri/src-tauri/src/lib.rs`
-- `apps/client-tauri/src/styles.css`
-- `project_map.md`
+- `apps/client-tauri/src-tauri/src/mcp.rs` (new)
+- `packages/mcp-types/src/index.ts` (new)
+- `apps/client-tauri/src/App.tsx`
+- `apps/client-tauri/src/mcp/McpDevTools.tsx` (new)

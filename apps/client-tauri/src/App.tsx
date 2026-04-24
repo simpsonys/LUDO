@@ -22,6 +22,7 @@ import {
   type ArtifactGenerateResult,
   type ArtifactProvider,
 } from "./artifacts/artifactGenerator";
+import { McpDevTools } from "./mcp/McpDevTools";
 
 function loadInitialState(): SessionState {
   const latest = loadLatestSessionSnapshot();
@@ -752,6 +753,10 @@ export default function App() {
                 <pre>{answer}</pre>
             </div>
         )}
+      </section>
+
+      <section className="panel persistence">
+        <McpDevTools session={state.session} />
       </section>
     </div>
   );

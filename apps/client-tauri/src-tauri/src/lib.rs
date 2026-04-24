@@ -10,6 +10,21 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
 
+mod mcp;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpToolDispatchRequest {
+    tool_name: String,
+    input: Value,
+}
+
+#[tauri::command]
+fn mcp_tool_dispatch(app: tauri::AppHandle, request: McpToolDispatchRequest) -> Result<Value, String> {
+    mcp::dispatch(&app, &request.tool_name, request.input)
+}
+
+
 static MEETING_MINUTES_PROMPT: &str = include_str!("../prompts/meeting_minutes.md");
 static ACTION_ITEMS_PROMPT: &str = include_str!("../prompts/action_items.md");
 static EXPLAIN_LIKE_IM_NEW_PROMPT: &str = include_str!("../prompts/explain_like_im_new.md");
@@ -2081,6 +2096,7 @@ pub fn run() {
             save_microphone_recording,
             generate_session_artifacts,
             ask_session_question,
+            mcp_tool_dispatch,
             open_path
         ])
         .run(tauri::generate_context!())
