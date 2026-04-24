@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import type { SessionRecord } from "@ludo/transcript-schema";
-import type { ArtifactName, ToolName } from "@ludo/mcp-types";
+import type { ToolName } from "@ludo/mcp-types";
 
 interface McpDevToolsProps {
   session: SessionRecord;

@@ -10,6 +10,9 @@ importers:
 
   apps/client-tauri:
     dependencies:
+      '@ludo/mcp-types':
+        specifier: workspace:*
+        version: link:../../packages/mcp-types
       '@ludo/transcript-schema':
         specifier: workspace:*
         version: link:../../packages/transcript-schema
