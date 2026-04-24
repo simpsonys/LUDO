@@ -1,14 +1,11 @@
-import type { BackendMode, SessionRecord, TranscriptEvent } from "@ludo/transcript-schema";
+import type { BackendMode, SessionRecord, StreamHandle, TranscriptEvent } from "@ludo/transcript-schema";
 
 interface ScheduledEvent {
   delayMs: number;
   event: TranscriptEvent;
 }
 
-export interface StreamHandle {
-  stop: () => void;
-  done: Promise<"completed" | "stopped">;
-}
+
 
 const LIVE_SEGMENTS = [
   "Starting LUDO mock live stream for desktop Phase 1.",
@@ -142,6 +139,7 @@ export function buildAzureServerPlaceholderSchedule(
       event: {
         type: "error",
         sessionId: session.sessionId,
+        at: now + 200,
         message:
           "Azure SDK path is not integrated yet. Use local_gpu or local_cpu for file transcription.",
       },

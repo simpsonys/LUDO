@@ -185,94 +185,132 @@ def build_cuda_error_events(session_id: str) -> list[dict[str, object]]:
     ]
 
 
-def build_local_file_events(
+def stream_local_file_events(
     session_id: str,
     backend: AsrBackend,
     source: SessionSource,
     input_file: Path,
     display_name: str,
-) -> list[dict[str, object]]:
+    language: SessionLanguage,
+) -> None:
     started = now_ms()
-    events: list[dict[str, object]] = [
+    emit_event(
         {
             "type": "session_started",
             "sessionId": session_id,
             "at": started,
             "source": source,
             "backend": backend,
-        },
+        }
+    )
+    time.sleep(0.02)
+    emit_event(
         {
             "type": "backend_state",
             "sessionId": session_id,
-            "at": started + 80,
+            "at": now_ms(),
             "state": "starting",
             "detail": f"{backend} worker booting for file transcription",
-        },
+        }
+    )
+    time.sleep(0.02)
+
+    model, model_name, device, compute_type, load_ms, cache_hit = load_whisper_model(backend)
+
+    if load_ms > 0:
+        emit_event(
+            {
+                "type": "backend_state",
+                "sessionId": session_id,
+                "at": now_ms(),
+                "state": "running",
+                "detail": f"loaded model={model_name} device={device} compute_type={compute_type} in {load_ms}ms (cached={cache_hit})",
+            }
+        )
+        time.sleep(0.02)
+
+    emit_event(
         {
             "type": "backend_state",
             "sessionId": session_id,
-            "at": started + 160,
+            "at": now_ms(),
             "state": "running",
             "detail": f"processing {display_name}",
-        },
+        }
+    )
+    time.sleep(0.02)
+    emit_event(
         {
             "type": "speech_start",
             "sessionId": session_id,
-            "at": started + 220,
-        },
-    ]
+            "at": now_ms(),
+        }
+    )
+    time.sleep(0.02)
 
-    segments = extract_text_segments(input_file=input_file, backend=backend)
-    timeline_cursor = 0
+    lang = language_arg(language)
 
-    for index, line in enumerate(segments, start=1):
-        segment_id = f"file-seg-{index:03d}"
-        interim_cut = max(18, int(len(line) * 0.72))
-        interim_text = f"{line[:interim_cut]}..." if len(line) > interim_cut else line
+    segments_generator, info = model.transcribe(str(input_file), language=lang, beam_size=5)
 
-        start_ms = timeline_cursor
-        end_ms = timeline_cursor + 1900
+    duration_sec = info.duration
+    log_debug(
+        f"file transcription started session={session_id} backend={backend} "
+        + f"language={lang or info.language}({info.language_probability:.2f}) duration={duration_sec}s"
+    )
 
-        events.append(
-            {
-                "type": "interim",
-                "sessionId": session_id,
-                "segmentId": segment_id,
-                "text": interim_text,
-                "startMs": start_ms,
-                "endMs": end_ms,
-            }
-        )
-        events.append(
+    seg_index = 0
+    for segment in segments_generator:
+        seg_index += 1
+        text = segment.text.strip()
+        if not text:
+            continue
+
+        segment_id = f"file-seg-{seg_index:03d}"
+        start_ms = int(segment.start * 1000)
+        end_ms = int(segment.end * 1000)
+
+        emit_event(
             {
                 "type": "final",
                 "sessionId": session_id,
                 "segmentId": segment_id,
-                "text": line,
+                "text": text,
                 "startMs": start_ms,
                 "endMs": end_ms,
             }
         )
-        timeline_cursor += 2050
+        time.sleep(0.02)
 
-    events.append(
+        if duration_sec > 0:
+            progress = min(100, int((segment.end / duration_sec) * 100))
+            emit_event(
+                {
+                    "type": "backend_state",
+                    "sessionId": session_id,
+                    "at": now_ms(),
+                    "state": "running",
+                    "detail": f"Transcribing... {progress}%",
+                }
+            )
+            time.sleep(0.02)
+
+    emit_event(
         {
             "type": "speech_end",
             "sessionId": session_id,
-            "at": started + 220 + timeline_cursor,
+            "at": now_ms(),
         }
     )
-    events.append(
+    time.sleep(0.02)
+    emit_event(
         {
             "type": "backend_state",
             "sessionId": session_id,
-            "at": started + 280 + timeline_cursor,
+            "at": now_ms(),
             "state": "completed",
             "detail": f"{backend} file transcription finished",
         }
     )
-
-    return events
 
 
 def load_wav_pcm_mono(input_file: Path) -> tuple[np.ndarray, int, int]:
@@ -1138,17 +1176,14 @@ def main() -> None:
                 vad_filter=vad_filter,
             )
         else:
-            events = build_local_file_events(
+            stream_local_file_events(
                 session_id=session_id,
                 backend=backend,
                 source=source,
                 input_file=input_file,
                 display_name=file_name,
+                language=language,
             )
-
-        for event in events:
-            emit_event(event)
-            time.sleep(0.04)
 
     except Exception as error:
         emit_event(

@@ -8,7 +8,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 static MEETING_MINUTES_PROMPT: &str = include_str!("../prompts/meeting_minutes.md");
 static ACTION_ITEMS_PROMPT: &str = include_str!("../prompts/action_items.md");
@@ -1307,6 +1307,95 @@ fn run_python_file_transcription(
 }
 
 #[tauri::command]
+async fn run_python_file_transcription_streamed(
+    app: tauri::AppHandle,
+    request: RunPythonFileTranscriptionRequest,
+) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or_else(|| "main window not found".to_string())?;
+
+    if request.input_file_bytes.is_empty() {
+        return Err("input_file_bytes is empty".to_string());
+    }
+    ensure_supported_backend(&request.backend)?;
+
+    let session_id = session_id_from_value(&request.session)?;
+    let language = request.session.get("language").and_then(Value::as_str).unwrap_or("auto");
+    ensure_supported_language(language)?;
+
+    let app_local_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let raw_dir = app_local_dir.join("sessions").join(&session_id).join("raw");
+    fs::create_dir_all(&raw_dir).map_err(|e| e.to_string())?;
+
+    let safe_name = sanitize_file_name(&request.input_file_name);
+    let worker_input_path = raw_dir.join(format!("worker_input_{safe_name}"));
+    fs::write(&worker_input_path, &request.input_file_bytes).map_err(|e| e.to_string())?;
+
+    let compute_type = request.session.get("computeType").and_then(Value::as_str);
+
+    let (service_dir, python_executable, python_path) = resolve_worker_python_runtime();
+    let mut command = Command::new(&python_executable);
+    command
+        .current_dir(&service_dir)
+        .env("PYTHONPATH", &python_path)
+        .arg("-m")
+        .arg("asr_worker_python.worker")
+        .arg("--mode").arg("file")
+        .arg("--session-id").arg(&session_id)
+        .arg("--backend").arg(&request.backend)
+        .arg("--source").arg(&request.source)
+        .arg("--input-file").arg(&worker_input_path)
+        .arg("--file-name").arg(&request.input_file_name)
+        .arg("--language").arg(language);
+
+    if request.backend == "local_gpu" {
+        let env_ct = std::env::var("LUDO_GPU_COMPUTE_TYPE").ok();
+        let effective_ct = compute_type
+            .filter(|ct| !ct.is_empty())
+            .map(|ct| ct.to_string())
+            .or(env_ct)
+            .unwrap_or_else(|| "float16".to_string());
+        command.env("LUDO_GPU_COMPUTE_TYPE", &effective_ct);
+    }
+    
+    configure_windows_gpu_runtime_env(&mut command, &request.backend, &python_executable, &service_dir, &python_path)?;
+
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let mut child = command.spawn().map_err(|e| format!("failed to spawn worker: {e}"))?;
+
+    let stdout = child.stdout.take().ok_or_else(|| "Failed to get stdout".to_string())?;
+
+    let event_name = format!("asr-event-{}", session_id);
+    tauri::async_runtime::spawn(async move {
+        let reader = BufReader::new(stdout);
+        for line_result in reader.lines() {
+            let line = match line_result {
+                Ok(line) => line,
+                Err(e) => {
+                    eprintln!("[LUDO][worker-stream] error reading line: {}", e);
+                    continue;
+                }
+            };
+
+            if let Ok(event) = serde_json::from_str::<Value>(&line) {
+                if let Err(e) = window.emit(&event_name, &event) {
+                    eprintln!("[LUDO][worker-stream] failed to emit event '{}': {}", event_name, e);
+                }
+            } else if !line.trim().is_empty() {
+                 eprintln!("[LUDO][worker-stream] failed to parse event JSON: {}", line);
+            }
+        }
+        
+        let status = child.wait();
+        eprintln!("[LUDO][worker-stream] worker process exited with status: {:?}", status);
+    });
+
+    Ok(())
+}
+
+
+#[tauri::command]
 fn run_python_microphone_chunk_transcription(
     app: tauri::AppHandle,
     request: RunPythonMicrophoneChunkTranscriptionRequest,
@@ -1888,6 +1977,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ludo_ping,
             run_python_file_transcription,
+            run_python_file_transcription_streamed,
             start_python_microphone_worker,
             poll_sys_audio_events,
             process_python_microphone_chunk_transcription,

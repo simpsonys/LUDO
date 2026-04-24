@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { SessionRecord, TranscriptEvent } from "@ludo/transcript-schema";
+import { listen } from "@tauri-apps/api/event";
+import type { SessionRecord, StreamHandle, TranscriptEvent } from "@ludo/transcript-schema";
 
 interface RunPythonFileTranscriptionRequest {
   session: SessionRecord;
@@ -273,4 +274,45 @@ export async function stopPythonMicrophoneWorker(
     stopped: response.stopped,
     detail: response.detail,
   };
+}
+
+export function runPythonFileTranscriptionStreamed(
+  request: RunPythonFileTranscriptionRequest,
+  onEvent: (event: TranscriptEvent) => void,
+): StreamHandle {
+  const { session } = request;
+  const eventName = `asr-event-${session.sessionId}`;
+  let doneResolve: (status: "completed" | "stopped") => void = () => {};
+
+  const done = new Promise<"completed" | "stopped">((resolve) => {
+    doneResolve = resolve;
+  });
+
+  const unlistenPromise = listen<TranscriptEvent>(eventName, (event) => {
+    onEvent(event.payload);
+    if (event.payload.type === "error" || (event.payload.type === "backend_state" && event.payload.state === "completed")) {
+      unlistenPromise.then(unlisten => unlisten());
+      doneResolve("completed");
+    }
+  });
+
+  const stop = () => {
+    unlistenPromise.then((unlisten) => {
+      unlisten();
+      doneResolve("stopped");
+    });
+  };
+
+  invokeTauriCommand("run_python_file_transcription_streamed", { request }).catch((err) => {
+    onEvent({
+        type: "error",
+        sessionId: session.sessionId,
+        at: Date.now(),
+        message: `Failed to invoke streaming transcription worker: ${String(err)}`,
+    });
+    unlistenPromise.then(unlisten => unlisten());
+    doneResolve("completed");
+  });
+
+  return { stop, done };
 }

@@ -1,15 +1,14 @@
-import type { BackendMode, SessionRecord, TranscriptEvent } from "@ludo/transcript-schema";
+import type { BackendMode, SessionRecord, StreamHandle, TranscriptEvent } from "@ludo/transcript-schema";
 import {
   buildMockLiveSchedule,
   buildStagedReplaySchedule,
   runScheduledEvents,
-  type StreamHandle,
 } from "./mockPipeline";
 import { startMicrophoneChunkedSession, startSystemAudioChunkedSession } from "./microphonePipeline";
-import { runPythonFileTranscription } from "./pythonWorkerClient";
+import { runPythonFileTranscription, runPythonFileTranscriptionStreamed } from "./pythonWorkerClient";
 import { createServerAsrAdapter } from "./serverAsrAdapter";
 
-export type { StreamHandle } from "./mockPipeline";
+
 
 export const BACKEND_MODES: BackendMode[] = ["local_gpu", "local_cpu", "azure_server"];
 
@@ -68,6 +67,7 @@ function createBackendConfigErrorStream(
         event: {
           type: "error",
           sessionId: session.sessionId,
+          at: now + 100,
           message,
         },
       },
@@ -114,6 +114,7 @@ function createDeferredStream(
         sink({
           type: "error",
           sessionId,
+          at: Date.now(),
           message: `Backend invocation failed: ${String(error)}`,
         });
       }
@@ -152,26 +153,34 @@ export function createBackendAdapter(mode: BackendMode): AsrBackendAdapter {
       }
 
       const job = (async () => {
-        const workerResult =
-          mode === "azure_server" && serverAdapter
-            ? await serverAdapter.transcribeFile({
-                session: request.session,
-                file: request.file,
-              })
-            : await (async () => {
-                const fileBuffer = await request.file.arrayBuffer();
-                const fileBytes = Array.from(new Uint8Array(fileBuffer));
+        if (mode === "local_gpu" || mode === "local_cpu") {
+          const fileBuffer = await request.file.arrayBuffer();
+          const fileBytes = Array.from(new Uint8Array(fileBuffer));
+          return runPythonFileTranscriptionStreamed(
+            {
+              session: request.session,
+              backend: mode,
+              source: request.session.source,
+              inputFileName: request.file.name,
+              inputFileBytes: fileBytes,
+            },
+            sink,
+          );
+        }
 
-                return runPythonFileTranscription({
-                  session: request.session,
-                  backend: mode,
-                  source: request.session.source,
-                  inputFileName: request.file.name,
-                  inputFileBytes: fileBytes,
-                });
-              })();
+        if (mode === "azure_server" && serverAdapter) {
+          const workerResult = await serverAdapter.transcribeFile({
+            session: request.session,
+            file: request.file,
+          });
+          return runScheduledEvents(buildStagedReplaySchedule(workerResult.events), sink);
+        }
 
-        return runScheduledEvents(buildStagedReplaySchedule(workerResult.events), sink);
+        return createBackendConfigErrorStream(
+          request.session,
+          `Backend ${mode} not implemented for file transcription`,
+          sink,
+        );
       })();
 
       return createDeferredStream(job, request.session.sessionId, sink);

@@ -86,10 +86,16 @@ export type TranscriptEvent =
   | {
       type: "error";
       sessionId: string;
+      at: number;
       message: string;
     };
 
 export interface SessionSnapshot {
   session: SessionRecord;
   events: TranscriptEvent[];
+}
+
+export interface StreamHandle {
+  stop: () => void;
+  done: Promise<"completed" | "stopped">;
 }
