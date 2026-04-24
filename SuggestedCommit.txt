@@ -1,1 +1,1 @@
-fix: intelligent overlap merging for live transcript final segments
+feat: auto-archive history.md before git commit in DevToolLudo

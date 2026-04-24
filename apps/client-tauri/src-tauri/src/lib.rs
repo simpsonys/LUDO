@@ -10,6 +10,10 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
+static MEETING_MINUTES_PROMPT: &str = include_str!("../prompts/meeting_minutes.md");
+static ACTION_ITEMS_PROMPT: &str = include_str!("../prompts/action_items.md");
+static EXPLAIN_LIKE_IM_NEW_PROMPT: &str = include_str!("../prompts/explain_like_im_new.md");
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WriteSessionArtifactsRequest {
@@ -1548,6 +1552,303 @@ fn save_microphone_recording(
     Ok(full_session_path.to_string_lossy().to_string())
 }
 
+#[derive(Debug, Clone, Copy)]
+enum LlmProvider {
+    Anthropic,
+    OpenAI,
+    Gemini,
+}
+
+impl LlmProvider {
+    fn from_str(s: &str) -> Option<Self> {
+        let lower = s.to_ascii_lowercase();
+        match lower.as_str() {
+            "anthropic" => Some(Self::Anthropic),
+            "openai" => Some(Self::OpenAI),
+            "gemini" => Some(Self::Gemini),
+            _ => None,
+        }
+    }
+
+    fn api_key_env_var(self) -> &'static str {
+        match self {
+            Self::Anthropic => "ANTHROPIC_API_KEY",
+            Self::OpenAI => "OPENAI_API_KEY",
+            Self::Gemini => "GEMINI_API_KEY",
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::OpenAI => "openai",
+            Self::Gemini => "gemini",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateSessionArtifactsRequest {
+    session_id: String,
+    transcript_text: String,
+    provider: Option<String>,
+    session_source: Option<String>,
+    session_backend: Option<String>,
+    session_language: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateSessionArtifactsResponse {
+    artifacts_dir: String,
+    meeting_minutes_path: String,
+    action_items_path: String,
+    explain_like_im_new_path: String,
+    provider_used: String,
+}
+
+fn session_id_to_date_str(session_id: &str) -> String {
+    let stripped = session_id.strip_prefix("session-").unwrap_or(session_id);
+    if stripped.len() >= 13 {
+        let year = stripped.get(0..4).unwrap_or("????");
+        let month = stripped.get(4..6).unwrap_or("??");
+        let day = stripped.get(6..8).unwrap_or("??");
+        let rest = stripped.get(9..).unwrap_or("");
+        let hour = rest.get(0..2).unwrap_or("00");
+        let min = rest.get(2..4).unwrap_or("00");
+        format!("{}-{}-{} {}:{}", year, month, day, hour, min)
+    } else {
+        session_id.to_string()
+    }
+}
+
+fn build_session_info_header(
+    session_id: &str,
+    source: Option<&str>,
+    backend: Option<&str>,
+    language: Option<&str>,
+) -> String {
+    let mut header = String::from("## Session Info\n");
+    header.push_str(&format!("- Session ID: {}\n", session_id));
+    if let Some(s) = source {
+        header.push_str(&format!("- Source: {}\n", s));
+    }
+    if let Some(b) = backend {
+        header.push_str(&format!("- Backend: {}\n", b));
+    }
+    if let Some(l) = language {
+        header.push_str(&format!("- Language: {}\n", l));
+    }
+    header.push_str(&format!("- Generated At: {}\n", session_id_to_date_str(session_id)));
+    header.push('\n');
+    header
+}
+
+async fn call_anthropic(api_key: &str, prompt: &str, transcript: &str) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let user_content = format!("{}\n\n## 전사본 (Transcript)\n\n{}", prompt, transcript);
+    let body = json!({
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": user_content}]
+    });
+
+    let response = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Anthropic API 요청 실패: {e}"))?;
+
+    let status = response.status();
+    let resp: Value = response.json().await
+        .map_err(|e| format!("Anthropic API 응답 파싱 실패: {e}"))?;
+
+    if !status.is_success() {
+        let msg = resp.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or("unknown");
+        return Err(format!("Anthropic API 오류 ({}): {}", status, msg));
+    }
+
+    resp.get("content").and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("text"))
+        .and_then(Value::as_str)
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| format!("Anthropic API 응답 형식 오류: {resp}"))
+}
+
+async fn call_openai(api_key: &str, prompt: &str, transcript: &str) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let user_content = format!("{}\n\n## 전사본 (Transcript)\n\n{}", prompt, transcript);
+    let body = json!({
+        "model": "gpt-4o",
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": user_content}]
+    });
+
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("OpenAI API 요청 실패: {e}"))?;
+
+    let status = response.status();
+    let resp: Value = response.json().await
+        .map_err(|e| format!("OpenAI API 응답 파싱 실패: {e}"))?;
+
+    if !status.is_success() {
+        let msg = resp.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or("unknown");
+        return Err(format!("OpenAI API 오류 ({}): {}", status, msg));
+    }
+
+    resp.get("choices").and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("message"))
+        .and_then(|msg| msg.get("content"))
+        .and_then(Value::as_str)
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| format!("OpenAI API 응답 형식 오류: {resp}"))
+}
+
+async fn call_gemini(api_key: &str, prompt: &str, transcript: &str) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let user_content = format!("{}\n\n## 전사본 (Transcript)\n\n{}", prompt, transcript);
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
+        api_key
+    );
+    let body = json!({
+        "contents": [{"parts": [{"text": user_content}]}]
+    });
+
+    let response = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini API 요청 실패: {e}"))?;
+
+    let status = response.status();
+    let resp: Value = response.json().await
+        .map_err(|e| format!("Gemini API 응답 파싱 실패: {e}"))?;
+
+    if !status.is_success() {
+        let msg = resp.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).unwrap_or("unknown");
+        return Err(format!("Gemini API 오류 ({}): {}", status, msg));
+    }
+
+    resp.get("candidates").and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(Value::as_array)
+        .and_then(|parts| parts.first())
+        .and_then(|part| part.get("text"))
+        .and_then(Value::as_str)
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| format!("Gemini API 응답 형식 오류: {resp}"))
+}
+
+async fn call_llm(
+    provider: LlmProvider,
+    api_key: &str,
+    prompt: &str,
+    transcript: &str,
+) -> Result<String, String> {
+    match provider {
+        LlmProvider::Anthropic => call_anthropic(api_key, prompt, transcript).await,
+        LlmProvider::OpenAI => call_openai(api_key, prompt, transcript).await,
+        LlmProvider::Gemini => call_gemini(api_key, prompt, transcript).await,
+    }
+}
+
+#[tauri::command]
+async fn generate_session_artifacts(
+    app: tauri::AppHandle,
+    request: GenerateSessionArtifactsRequest,
+) -> Result<GenerateSessionArtifactsResponse, String> {
+    if request.transcript_text.trim().is_empty() {
+        return Err("전사본이 비어 있습니다. 세션을 먼저 실행해 transcript를 생성하세요.".to_string());
+    }
+
+    let provider_str = request.provider
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("LUDO_ARTIFACT_PROVIDER").ok())
+        .unwrap_or_else(|| "anthropic".to_string());
+
+    let provider = LlmProvider::from_str(&provider_str).ok_or_else(|| {
+        format!("지원하지 않는 provider '{}'. anthropic/openai/gemini 중 하나를 선택하세요.", provider_str)
+    })?;
+
+    let api_key = std::env::var(provider.api_key_env_var()).map_err(|_| {
+        format!(
+            "{} 환경 변수가 설정되지 않았습니다. 앱 실행 환경에서 설정해 주세요.",
+            provider.api_key_env_var()
+        )
+    })?;
+
+    let app_local_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("앱 로컬 디렉토리 경로 확인 실패: {e}"))?;
+
+    let artifacts_dir = app_local_dir
+        .join("sessions")
+        .join(&request.session_id)
+        .join("artifacts");
+
+    fs::create_dir_all(&artifacts_dir)
+        .map_err(|e| format!("artifacts 디렉토리 생성 실패: {e}"))?;
+
+    let session_info = build_session_info_header(
+        &request.session_id,
+        request.session_source.as_deref(),
+        request.session_backend.as_deref(),
+        request.session_language.as_deref(),
+    );
+
+    eprintln!(
+        "[LUDO][artifact] provider={} session={} dir={}",
+        provider.as_str(), request.session_id, artifacts_dir.display()
+    );
+
+    let body = call_llm(provider, &api_key, MEETING_MINUTES_PROMPT, &request.transcript_text).await?;
+    let meeting_minutes_path = artifacts_dir.join("meeting_minutes.md");
+    fs::write(&meeting_minutes_path, format!("# Meeting Minutes\n\n{}{}", session_info, body))
+        .map_err(|e| format!("meeting_minutes.md 저장 실패: {e}"))?;
+    eprintln!("[LUDO][artifact] meeting_minutes.md written");
+
+    let body = call_llm(provider, &api_key, ACTION_ITEMS_PROMPT, &request.transcript_text).await?;
+    let action_items_path = artifacts_dir.join("action_items.md");
+    fs::write(&action_items_path, format!("# Action Items\n\n{}{}", session_info, body))
+        .map_err(|e| format!("action_items.md 저장 실패: {e}"))?;
+    eprintln!("[LUDO][artifact] action_items.md written");
+
+    let body = call_llm(provider, &api_key, EXPLAIN_LIKE_IM_NEW_PROMPT, &request.transcript_text).await?;
+    let explain_path = artifacts_dir.join("explain_like_im_new.md");
+    fs::write(&explain_path, format!("# Explain Like I'm New\n\n{}{}", session_info, body))
+        .map_err(|e| format!("explain_like_im_new.md 저장 실패: {e}"))?;
+    eprintln!("[LUDO][artifact] explain_like_im_new.md written");
+
+    Ok(GenerateSessionArtifactsResponse {
+        artifacts_dir: artifacts_dir.to_string_lossy().to_string(),
+        meeting_minutes_path: meeting_minutes_path.to_string_lossy().to_string(),
+        action_items_path: action_items_path.to_string_lossy().to_string(),
+        explain_like_im_new_path: explain_path.to_string_lossy().to_string(),
+        provider_used: provider.as_str().to_string(),
+    })
+}
+
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -1573,6 +1874,7 @@ pub fn run() {
             run_python_microphone_chunk_transcription,
             write_session_artifacts,
             save_microphone_recording,
+            generate_session_artifacts,
             open_path
         ])
         .run(tauri::generate_context!())

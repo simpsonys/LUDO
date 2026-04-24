@@ -2,7 +2,7 @@
 > Listen. Understand. Distill. Organize.
 > Stack: Tauri v2 · React · TypeScript · Rust · Python (faster-whisper)
 
-**Last updated:** 2026-04-23  
+**Last updated:** 2026-04-24  
 **Use this file first.** Read this file before scanning the repo.  
 **Update rule:** Whenever major files, directories, architecture, or execution flow change, update this file immediately.
 
@@ -51,11 +51,12 @@ Provider-specific logic must stay isolated in adapter files only.
    - `events.jsonl`
    - `transcript.md`
 
-4. **Next likely implementation step**
-   - Windows system audio capture
+4. **Artifact generation (Phase 3 — implemented)**
+   - provider-selectable (anthropic / openai / gemini)
+   - meeting_minutes.md, action_items.md, explain_like_im_new.md
+   - stored under `sessions/{sessionId}/artifacts/`
 
 5. **Not started yet**
-   - artifact generation
    - RAG / Q&A
    - MCP integration
 
@@ -84,8 +85,15 @@ Provider-specific logic must stay isolated in adapter files only.
 - local Azure-first ASR gateway server
 - Azure backend routing in UI/state
 
+### Phase 3 — Artifact Generation
+- provider-selectable LLM artifact generation (anthropic / openai / gemini)
+- meeting_minutes.md, action_items.md, explain_like_im_new.md
+- prompt templates under `src-tauri/prompts/`
+- session info header automatically prepended by Rust
+- API key from env: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
+- provider override: LUDO_ARTIFACT_PROVIDER env var or UI dropdown
+
 ### Not Started
-- artifact generation
 - RAG / Q&A
 - MCP integration
 - Android client implementation
@@ -134,7 +142,7 @@ LUDO/
 ├── apps/
 │   └── client-tauri/                      # Tauri desktop app (React + Rust)
 │       ├── src/                           # React / TypeScript frontend
-│       │   ├── App.tsx                    # Root UI component; session controls, transcript panel, status UI
+│       │   ├── App.tsx                    # Root UI component; session controls, transcript panel, artifact UI
 │       │   ├── asr/
 │       │   │   ├── backendAdapter.ts      # Top-level ASR routing; local vs server path
 │       │   │   ├── microphonePipeline.ts  # Mic capture, PCM/WAV chunking, local worker lifecycle
@@ -142,13 +150,19 @@ LUDO/
 │       │   │   ├── serverAsrAdapter.ts    # Provider-neutral server adapter interface
 │       │   │   ├── azureServerAdapter.ts  # Azure-specific HTTP adapter + payload normalization
 │       │   │   └── mockPipeline.ts        # Mock/staged transcript replay helpers
-│       │   └── session/
-│       │       ├── sessionStore.ts        # Session state, reducer, provider-neutral event application
-│       │       ├── sessionFileWriter.ts   # Tauri write_session_artifacts command wrapper
-│       │       └── sessionPersistence.ts  # localStorage/session layout helpers
+│       │   ├── session/
+│       │   │   ├── sessionStore.ts        # Session state, reducer, provider-neutral event application
+│       │   │   ├── sessionFileWriter.ts   # Tauri write_session_artifacts command wrapper
+│       │   │   └── sessionPersistence.ts  # localStorage/session layout helpers
+│       │   └── artifacts/
+│       │       └── artifactGenerator.ts   # generate_session_artifacts invoke wrapper; provider selection
 │       ├── src-tauri/
+│       │   ├── prompts/
+│       │   │   ├── meeting_minutes.md     # Prompt template for meeting minutes artifact
+│       │   │   ├── action_items.md        # Prompt template for action items artifact
+│       │   │   └── explain_like_im_new.md # Prompt template for easy-explanation artifact
 │       │   └── src/
-│       │       ├── lib.rs                 # Main Rust logic: Tauri commands, worker management, session writing
+│       │       ├── lib.rs                 # Main Rust logic: Tauri commands, worker mgmt, artifact generation
 │       │       └── main.rs                # Entry point only
 │       └── .env                           # Client-side env vars (e.g. Azure server base URL)
 │
@@ -422,8 +436,10 @@ sessions/{sessionId}/
 6. **Windows system audio capture is implemented via WebRTC (`getDisplayMedia`)**
    - `SessionSource = "system"` is fully hooked up
 
-7. **Artifact generation is not implemented yet**
-   - do not confuse session persistence with artifact generation
+7. **Artifact generation is implemented (Phase 3)**
+   - provider-selectable: anthropic / openai / gemini
+   - generates 3 Markdown files per session under `artifacts/`
+   - prompt templates are externalized under `src-tauri/prompts/`
 
 8. **RAG and MCP are not implemented yet**
    - keep transcript/event/storage layers clean for future integration
@@ -456,7 +472,7 @@ sessions/{sessionId}/
 2. `services/asr-worker-python/src/asr_worker_python/worker.py`
 3. `apps/client-tauri/src/asr/microphonePipeline.ts`
 
-### Windows system audio capture (next likely phase)
+### Windows system audio capture
 1. `packages/transcript-schema/src/index.ts`
 2. `apps/client-tauri/src/asr/microphonePipeline.ts`
 3. `apps/client-tauri/src-tauri/src/lib.rs`

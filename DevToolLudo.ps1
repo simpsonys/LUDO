@@ -302,6 +302,47 @@ function Env-SessionsClean {
     }
 }
 
+function Save-HistorySnapshot {
+    $historyPath = Join-Path $global:ProjectRoot "history.md"
+
+    if (-not (Test-Path $historyPath)) {
+        Write-Host "[INFO] history.md 없음, 아카이브 건너뜀." -ForegroundColor Gray
+        return
+    }
+
+    $aiHistoryDir = Join-Path $global:ProjectRoot "AIHistory"
+    if (-not (Test-Path $aiHistoryDir)) {
+        New-Item -ItemType Directory -Path $aiHistoryDir -Force | Out-Null
+    }
+
+    # Derive slug from first content line of "## Current Goal" section
+    $lines = Get-Content $historyPath
+    $slug = "worklog"
+    $inGoal = $false
+    foreach ($line in $lines) {
+        if ($line -match '^##\s*Current Goal') {
+            $inGoal = $true
+            continue
+        }
+        if ($inGoal) {
+            if ($line -match '^#') { break }
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $raw = $line.Trim() -replace '[^\w\s-]', '' -replace '\s+', '-'
+            $candidate = ($raw.ToLower() -replace '[^a-z0-9-]', '').Trim('-')
+            if ($candidate.Length -gt 30) { $candidate = $candidate.Substring(0, 30).TrimEnd('-') }
+            if (-not [string]::IsNullOrEmpty($candidate)) { $slug = $candidate }
+            break
+        }
+    }
+
+    $ts = (Get-Date).ToString("yyyyMMdd_HHmm")
+    $archiveName = "${ts}_${slug}.md"
+    $archivePath = Join-Path $aiHistoryDir $archiveName
+
+    Copy-Item $historyPath $archivePath
+    Write-Host "[INFO] history.md 아카이브 → AIHistory\$archiveName" -ForegroundColor Gray
+}
+
 function Git-Commit {
     Write-Host "`n[작업 내용 Commit]" -ForegroundColor Green
     Write-Host "변경된 모든 파일을 스테이징합니다 (git add .)." -ForegroundColor Gray
@@ -334,7 +375,8 @@ function Git-Commit {
     
     $cleanMsg = $commitMsg -replace '\[Suggested Commit\] ', '' -replace 'git commit -m ', '' -replace '"', ''
     $cleanMsg = $cleanMsg.Trim()
-    
+
+    Save-HistorySnapshot
     & git -C $global:ProjectRoot commit -m $cleanMsg
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] 커밋 실패! (변경사항 없거나 git 오류)`n" -ForegroundColor Red
@@ -435,6 +477,7 @@ function Git-Release {
     Write-Host "============================================================`n" -ForegroundColor Cyan
     
     & git -C $global:ProjectRoot add $pkgJsonPath $cargoTomlPath $tauriConfPath
+    Save-HistorySnapshot
     & git -C $global:ProjectRoot commit -m "chore: bump version to $userVer [$tagName]"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[!] 커밋할 내용 없거나 실패 - 이미 최신 상태일 수 있습니다." -ForegroundColor Yellow

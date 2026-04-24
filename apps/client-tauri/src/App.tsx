@@ -16,6 +16,12 @@ import {
   toSessionSnapshot,
   type SessionState,
 } from "./session/sessionStore";
+import {
+  ARTIFACT_PROVIDERS,
+  generateSessionArtifacts,
+  type ArtifactGenerateResult,
+  type ArtifactProvider,
+} from "./artifacts/artifactGenerator";
 
 function loadInitialState(): SessionState {
   const latest = loadLatestSessionSnapshot();
@@ -93,6 +99,9 @@ export default function App() {
   const [clock, setClock] = useState(Date.now());
   const [actionMessage, setActionMessage] = useState<string>("Ready");
   const [writeResult, setWriteResult] = useState<SessionWriteResult | null>(null);
+  const [artifactResult, setArtifactResult] = useState<ArtifactGenerateResult | null>(null);
+  const [isGeneratingArtifacts, setIsGeneratingArtifacts] = useState(false);
+  const [selectedArtifactProvider, setSelectedArtifactProvider] = useState<ArtifactProvider>("anthropic");
 
   const stateRef = useRef(state);
   const streamRef = useRef<StreamHandle | null>(null);
@@ -199,6 +208,7 @@ export default function App() {
     setState(next);
     setIsRunning(true);
     setWriteResult(null);
+    setArtifactResult(null);
     setActionMessage("Transcription pipeline running...");
   };
 
@@ -314,6 +324,22 @@ export default function App() {
     setActionMessage("Stopping transcription...");
   };
 
+  const generateArtifacts = async () => {
+    setIsGeneratingArtifacts(true);
+    setArtifactResult(null);
+    setActionMessage(`아티팩트 생성 중... (${selectedArtifactProvider} API 호출 중)`);
+
+    const result = await generateSessionArtifacts(
+      state.session,
+      state.finalSegments,
+      selectedArtifactProvider,
+    );
+
+    setArtifactResult(result);
+    setActionMessage(result.message);
+    setIsGeneratingArtifacts(false);
+  };
+
   const newSession = () => {
     if (streamRef.current) {
       streamRef.current.stop();
@@ -333,6 +359,7 @@ export default function App() {
     setIsRunning(false);
     setActionMessage("Started a fresh session.");
     setWriteResult(null);
+    setArtifactResult(null);
   };
 
   const restoreLatest = () => {
@@ -382,14 +409,27 @@ export default function App() {
             </select>
           </label>
 
-          <label>
-            File Source
-            <input
-              type="file"
-              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-              disabled={isRunning}
-            />
-          </label>
+          <div className="controls-label">
+            <span>File Source</span>
+            <div className="file-picker">
+              <label
+                htmlFor="file-source-input"
+                className={`file-picker-btn${isRunning ? " file-picker-btn--disabled" : ""}`}
+              >
+                파일 선택
+              </label>
+              <span className={`file-picker-name${selectedFile ? " has-file" : ""}`}>
+                {selectedFile ? selectedFile.name : "선택된 파일 없음"}
+              </span>
+              <input
+                id="file-source-input"
+                type="file"
+                className="file-picker-input"
+                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                disabled={isRunning}
+              />
+            </div>
+          </div>
 
           <label>
             Language
@@ -417,6 +457,19 @@ export default function App() {
               </select>
             </label>
           )}
+
+          <label>
+            Artifact Provider
+            <select
+              value={selectedArtifactProvider}
+              onChange={(event) => setSelectedArtifactProvider(event.target.value as ArtifactProvider)}
+              disabled={isRunning || isGeneratingArtifacts}
+            >
+              {ARTIFACT_PROVIDERS.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="actions">
@@ -437,6 +490,12 @@ export default function App() {
           </button>
           <button onClick={restoreLatest} disabled={isRunning}>
             Restore Latest
+          </button>
+          <button
+            onClick={() => void generateArtifacts()}
+            disabled={isRunning || isGeneratingArtifacts || state.finalSegments.length === 0}
+          >
+            {isGeneratingArtifacts ? "생성 중..." : "아티팩트 생성"}
           </button>
         </div>
       </header>
@@ -567,6 +626,63 @@ export default function App() {
           </div>
         ) : null}
         <pre>{JSON.stringify(snapshot, null, 2)}</pre>
+      </section>
+
+      <section className="panel persistence">
+        <h2>🤖 Artifact Generation</h2>
+        <p>
+          세션 transcript를 기반으로 3개의 Markdown 아티팩트를 생성합니다.
+          실행 전에 선택한 provider의 API 키가 환경 변수에 설정되어 있어야 합니다.
+        </p>
+        <p>
+          <strong>Provider:</strong> {selectedArtifactProvider} &nbsp;|&nbsp;
+          <strong>Transcript segments:</strong> {state.finalSegments.length}
+        </p>
+
+        {artifactResult ? (
+          <div className="write-result">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.65rem" }}>
+              <div>
+                <p>
+                  <strong>Result:</strong> {artifactResult.success ? "✅ 성공" : "❌ 실패"}
+                </p>
+                <p>{artifactResult.message}</p>
+                {artifactResult.providerUsed && (
+                  <p><strong>Provider used:</strong> {artifactResult.providerUsed}</p>
+                )}
+              </div>
+              {artifactResult.artifactsDir && (
+                <button onClick={() => openPath(artifactResult.artifactsDir!)}>
+                  📂 Open artifacts/
+                </button>
+              )}
+            </div>
+            {artifactResult.success && (
+              <>
+                <p>
+                  <strong>meeting_minutes.md:</strong>{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); openPath(artifactResult.meetingMinutesPath!); }}>
+                    {artifactResult.meetingMinutesPath}
+                  </a>
+                </p>
+                <p>
+                  <strong>action_items.md:</strong>{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); openPath(artifactResult.actionItemsPath!); }}>
+                    {artifactResult.actionItemsPath}
+                  </a>
+                </p>
+                <p>
+                  <strong>explain_like_im_new.md:</strong>{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); openPath(artifactResult.explainLikeImNewPath!); }}>
+                    {artifactResult.explainLikeImNewPath}
+                  </a>
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="empty">아티팩트가 아직 생성되지 않았습니다. transcript가 있는 상태에서 "아티팩트 생성" 버튼을 클릭하세요.</p>
+        )}
       </section>
     </div>
   );
