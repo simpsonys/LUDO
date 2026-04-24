@@ -13,6 +13,22 @@ use tauri::{Emitter, Manager};
 static MEETING_MINUTES_PROMPT: &str = include_str!("../prompts/meeting_minutes.md");
 static ACTION_ITEMS_PROMPT: &str = include_str!("../prompts/action_items.md");
 static EXPLAIN_LIKE_IM_NEW_PROMPT: &str = include_str!("../prompts/explain_like_im_new.md");
+static QA_SYSTEM_PROMPT: &str = include_str!("../prompts/qa_system.md");
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AskSessionQuestionRequest {
+    session_id: String,
+    question: String,
+    provider: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AskSessionQuestionResponse {
+    answer: String,
+    provider_used: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1960,6 +1976,68 @@ async fn generate_session_artifacts(
 }
 
 #[tauri::command]
+async fn ask_session_question(
+    app: tauri::AppHandle,
+    request: AskSessionQuestionRequest,
+) -> Result<AskSessionQuestionResponse, String> {
+    let provider_str = request.provider
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("LUDO_ARTIFACT_PROVIDER").ok())
+        .unwrap_or_else(|| "gemini".to_string());
+
+    let provider = LlmProvider::from_str(&provider_str).ok_or_else(|| {
+        format!("지원하지 않는 provider '{}'. anthropic/openai/gemini 중 하나를 선택하세요.", provider_str)
+    })?;
+
+    let api_key = std::env::var(provider.api_key_env_var()).map_err(|_| {
+        format!(
+            "{} 환경 변수가 설정되지 않았습니다. 앱 실행 환경에서 설정해 주세요.",
+            provider.api_key_env_var()
+        )
+    })?;
+
+    let app_local_dir = app.path().app_local_data_dir().map_err(|e| format!("앱 로컬 디렉토리 경로 확인 실패: {e}"))?;
+    let session_dir = app_local_dir.join("sessions").join(&request.session_id);
+    
+    let mut context = String::new();
+
+    let transcript_path = session_dir.join("transcript").join("transcript.md");
+    if transcript_path.exists() {
+        let content = fs::read_to_string(transcript_path).unwrap_or_default();
+        context.push_str("## [Source: transcript.md]\n\n");
+        context.push_str(&content);
+        context.push_str("\n\n");
+    }
+
+    let artifacts_dir = session_dir.join("artifacts");
+    let artifact_files = vec!["meeting_minutes.md", "action_items.md", "explain_like_im_new.md"];
+    for file_name in artifact_files {
+        let file_path = artifacts_dir.join(file_name);
+        if file_path.exists() {
+            let content = fs::read_to_string(file_path).unwrap_or_default();
+            context.push_str(&format!("## [Source: {}]\n\n", file_name));
+            context.push_str(&content);
+            context.push_str("\n\n");
+        }
+    }
+
+    if context.trim().is_empty() {
+        return Err("세션 데이터를 찾을 수 없습니다. 먼저 파일을 변환하거나 아티팩트를 생성하세요.".to_string());
+    }
+    
+    let question_and_context = format!("{}\n\n---\n\n## User Question\n\n{}", context, request.question);
+
+    let answer = call_llm(provider, &api_key, QA_SYSTEM_PROMPT, &question_and_context).await?;
+
+    Ok(AskSessionQuestionResponse {
+        answer,
+        provider_used: provider.as_str().to_string(),
+    })
+}
+
+#[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -2002,6 +2080,7 @@ pub fn run() {
             write_session_artifacts,
             save_microphone_recording,
             generate_session_artifacts,
+            ask_session_question,
             open_path
         ])
         .run(tauri::generate_context!())

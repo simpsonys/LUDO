@@ -102,6 +102,9 @@ export default function App() {
   const [artifactResult, setArtifactResult] = useState<ArtifactGenerateResult | null>(null);
   const [isGeneratingArtifacts, setIsGeneratingArtifacts] = useState(false);
   const [selectedArtifactProvider, setSelectedArtifactProvider] = useState<ArtifactProvider>("gemini");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [isAsking, setIsAsking] = useState(false);
 
   const stateRef = useRef(state);
   const streamRef = useRef<StreamHandle | null>(null);
@@ -390,6 +393,26 @@ export default function App() {
       void resolveSessionPaths(latest.session.sessionId).then((result) => {
         if (result) setWriteResult(result);
       });
+    }
+  };
+
+  const handleAskQuestion = async () => {
+    if (!question.trim() || isAsking) return;
+    setIsAsking(true);
+    setAnswer("");
+    try {
+      const response: { answer: string; providerUsed: string } = await invoke("ask_session_question", {
+        request: {
+          sessionId: state.session.sessionId,
+          question: question,
+          provider: selectedArtifactProvider,
+        },
+      });
+      setAnswer(response.answer);
+    } catch (err) {
+      setAnswer(`질문 처리 중 오류가 발생했습니다: ${String(err)}`);
+    } finally {
+      setIsAsking(false);
     }
   };
 
@@ -698,6 +721,36 @@ export default function App() {
           </div>
         ) : (
           <p className="empty">아티팩트가 아직 생성되지 않았습니다. transcript가 있는 상태에서 "아티팩트 생성" 버튼을 클릭하세요.</p>
+        )}
+      </section>
+
+      <section className="panel persistence">
+        <h2>🔎 Session Q&A</h2>
+        <p>세션 내용에 대해 질문하세요. (Transcript 및 생성된 Artifacts 기반)</p>
+        
+        <div className="qa-controls">
+            <input 
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="예: '회의의 주요 결정 사항은 무엇이었나요?'"
+                disabled={isAsking || state.finalSegments.length === 0}
+                onKeyDown={(e) => { if (e.key === "Enter") void handleAskQuestion(); }}
+            />
+            <button
+                onClick={() => void handleAskQuestion()}
+                disabled={isAsking || state.finalSegments.length === 0 || !question.trim()}
+            >
+                {isAsking ? "질문 중..." : "질문하기"}
+            </button>
+        </div>
+
+        {isAsking && <p>답변을 생성 중입니다...</p>}
+
+        {answer && (
+            <div className="qa-answer">
+                <pre>{answer}</pre>
+            </div>
         )}
       </section>
     </div>

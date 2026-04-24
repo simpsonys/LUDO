@@ -326,6 +326,30 @@ button:disabled {
   text-decoration: underline;
 }
 
+.qa-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.qa-controls input {
+  flex-grow: 1;
+}
+
+.qa-answer {
+  background-color: #2a2a2e;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+
+.qa-answer pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
 .persistence pre {
   margin: 0;
   max-height: 260px;
